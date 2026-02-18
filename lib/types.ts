@@ -5,6 +5,7 @@ export interface Store {
   name: string
   code: string
   has_transportation_fee: boolean
+  base_day_of_week: number
   created_at: string
   updated_at: string
 }
@@ -24,6 +25,7 @@ export interface ShiftUnavailable {
   id: string
   user_id: string
   unavailable_date: string
+  notes: string | null
   created_at: string
 }
 
@@ -32,11 +34,25 @@ export interface Shift {
   user_id: string
   store_id: string
   shift_date: string
+  start_time: string | null
+  end_time: string | null
+  notes: string | null
   created_at: string
   updated_at: string
   // JOIN用
   profiles?: Profile
   stores?: Store
+}
+
+export interface ShiftPreference {
+  id: string
+  user_id: string
+  preference_date: string
+  start_time: string
+  end_time: string
+  notes: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface Attendance {

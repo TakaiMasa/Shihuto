@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'シフト管理システム | 麺屋四季・RAMEN MODAY',
+  title: 'シフト管理システム | 麵屋 水・RAMEN MONDAY',
   description: 'シフト提出・勤怠管理・給与管理を一元化したシステム',
 }
 

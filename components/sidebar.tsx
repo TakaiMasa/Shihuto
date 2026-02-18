@@ -37,8 +37,8 @@ const navItems: NavItem[] = [
   { label: 'シフト確認', href: '/shift/view', icon: <CalendarCheck size={20} /> },
   { label: 'シフト管理', href: '/shift/manage', icon: <CalendarCog size={20} />, adminOnly: true },
   // 勤怠
-  { label: '打刻（麺屋四季）', href: '/attendance/shiki', icon: <Clock size={20} /> },
-  { label: '打刻（MODAY）', href: '/attendance/moday', icon: <Clock size={20} /> },
+  { label: '打刻（麺屋 水）', href: '/attendance/sui', icon: <Clock size={20} /> },
+  { label: '打刻（MONDAY）', href: '/attendance/monday', icon: <Clock size={20} /> },
   { label: '勤怠履歴', href: '/attendance/history', icon: <History size={20} /> },
   { label: '勤怠管理', href: '/attendance/manage', icon: <ClipboardList size={20} />, adminOnly: true },
   // 給与
@@ -74,7 +74,7 @@ export default function Sidebar() {
       {/* ロゴ */}
       <div className="px-6 py-5 border-b border-white/10">
         <h1 className="text-white font-bold text-lg">シフト管理</h1>
-        <p className="text-sidebar-text text-xs mt-1">麺屋四季 / RAMEN MODAY</p>
+        <p className="text-sidebar-text text-xs mt-1">麵屋 水とRAMEN MONDAY</p>
       </div>
 
       {/* ナビゲーション */}

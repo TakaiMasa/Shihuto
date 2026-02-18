@@ -142,7 +142,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-secondary text-xs mt-6">
-          麺屋四季 / RAMEN MODAY
+          麵屋 水とRAMEN MONDAY
         </p>
       </div>
     </div>

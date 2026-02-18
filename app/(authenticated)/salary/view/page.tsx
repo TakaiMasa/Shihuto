@@ -109,7 +109,7 @@ export default function SalaryViewPage() {
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-border">
-                <span className="text-secondary">麺屋四季 出勤日数</span>
+                <span className="text-secondary">麵屋 水 出勤日数</span>
                 <span className="font-medium text-foreground">{salary.work_days_shiki}日</span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-border">

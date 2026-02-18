@@ -41,7 +41,7 @@ function StaffDashboard() {
     const fetchData = async () => {
       const { data: myAttendances } = await supabase
         .from('attendances')
-        .select('work_minutes, break_minutes, store_id, stores(code)')
+        .select('work_minutes, break_minutes, store_id, stores(code, has_transportation_fee)')
         .eq('user_id', user.id)
         .gte('work_date', format(startOfMonth(new Date()), 'yyyy-MM-dd'))
         .lte('work_date', format(endOfMonth(new Date()), 'yyyy-MM-dd'))
@@ -49,7 +49,7 @@ function StaffDashboard() {
 
       if (myAttendances) {
         setTotalWorkMinutes(myAttendances.reduce((sum: number, a: any) => sum + (a.work_minutes || 0), 0))
-        setShikiDays(myAttendances.filter((a: any) => a.stores?.code === 'shiki').length)
+        setShikiDays(myAttendances.filter((a: any) => a.stores?.has_transportation_fee).length)
         setTotalDays(myAttendances.length)
       }
       setLoading(false)

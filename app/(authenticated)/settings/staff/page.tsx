@@ -206,7 +206,7 @@ export default function StaffSettingsPage() {
                 value={newForm.transportation_fee}
                 onChange={(e) => setNewForm({ ...newForm, transportation_fee: e.target.value })}
                 className="w-full px-3 py-2 rounded-lg border border-border text-sm"
-                placeholder="麺屋四季のみ"
+                placeholder="麵屋 水のみ"
               />
             </div>
 

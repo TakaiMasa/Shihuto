@@ -12,6 +12,7 @@ import {
   FileText,
   Check,
   CheckCircle,
+  Undo2,
 } from 'lucide-react'
 import { cn, formatCurrency, formatMinutesToHours } from '@/lib/utils'
 import type { Salary, Profile } from '@/lib/types'
@@ -57,8 +58,6 @@ export default function SalaryManagePage() {
       .from('stores')
       .select('*')
 
-    const shikiStore = storesData?.find((s) => s.code === 'shiki')
-
     if (!profiles || !storesData) {
       setMessage({ type: 'error', text: 'データの取得に失敗しました' })
       setCalculating(false)
@@ -69,7 +68,7 @@ export default function SalaryManagePage() {
     for (const profile of profiles) {
       const { data: attendances } = await supabase
         .from('attendances')
-        .select('*, stores(code)')
+        .select('*, stores(code, has_transportation_fee)')
         .eq('user_id', profile.id)
         .gte('work_date', `${yearMonth}-01`)
         .lte('work_date', format(endOfMonth(currentMonth), 'yyyy-MM-dd'))
@@ -77,7 +76,7 @@ export default function SalaryManagePage() {
 
       const totalWorkMinutes = attendances?.reduce((sum, a) => sum + (a.work_minutes || 0), 0) || 0
       const totalBreakMinutes = attendances?.reduce((sum, a) => sum + (a.break_minutes || 0), 0) || 0
-      const shikiDays = attendances?.filter((a: any) => a.stores?.code === 'shiki').length || 0
+      const shikiDays = attendances?.filter((a: any) => a.stores?.has_transportation_fee).length || 0
       const transportationFeePerDay = profile.transportation_fee || 0
       const baseSalary = Math.floor(totalWorkMinutes / 60 * profile.hourly_wage)
       const transportationTotal = shikiDays * transportationFeePerDay
@@ -112,6 +111,14 @@ export default function SalaryManagePage() {
     await supabase
       .from('salaries')
       .update({ is_confirmed: true })
+      .eq('id', salaryId)
+    fetchSalaries()
+  }
+
+  const handleUnconfirm = async (salaryId: string) => {
+    await supabase
+      .from('salaries')
+      .update({ is_confirmed: false })
       .eq('id', salaryId)
     fetchSalaries()
   }
@@ -304,13 +311,21 @@ export default function SalaryManagePage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        {!salary.is_confirmed && (
+                        {!salary.is_confirmed ? (
                           <button
                             onClick={() => handleConfirm(salary.id)}
                             className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100"
                             title="確定"
                           >
                             <Check size={14} />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUnconfirm(salary.id)}
+                            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100"
+                            title="確定取消"
+                          >
+                            <Undo2 size={14} />
                           </button>
                         )}
                         <button

@@ -14,7 +14,7 @@ import {
   endOfWeek,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Shift, Profile, Store } from '@/lib/types'
 
@@ -127,7 +127,7 @@ export default function ShiftViewPage() {
                         onClick={() => isCurrentMonth && setSelectedDate(dateStr)}
                         disabled={!isCurrentMonth}
                         className={cn(
-                          'relative aspect-square flex flex-col items-center justify-center rounded-lg text-sm transition-all',
+                          'relative min-h-[70px] flex flex-col items-center rounded-lg text-sm transition-all p-1',
                           !isCurrentMonth && 'opacity-30 cursor-default',
                           isCurrentMonth && 'hover:bg-muted cursor-pointer',
                           hasShifts && 'bg-primary-light',
@@ -138,9 +138,23 @@ export default function ShiftViewPage() {
                       >
                         <span>{format(day, 'd')}</span>
                         {hasShifts && (
-                          <span className="text-[10px] text-primary font-medium">
-                            {dayShifts.length}名
-                          </span>
+                          <div className="flex flex-col items-center gap-0.5 mt-0.5 w-full overflow-hidden">
+                            {dayShifts.slice(0, 2).map((shift) => (
+                              <span
+                                key={shift.id}
+                                className="text-[9px] leading-tight text-primary font-medium truncate w-full text-center"
+                              >
+                                {shift.start_time && shift.end_time
+                                  ? `${shift.start_time.substring(0, 5)}〜${shift.end_time.substring(0, 5)}`
+                                  : shift.profiles?.name}
+                              </span>
+                            ))}
+                            {dayShifts.length > 2 && (
+                              <span className="text-[9px] text-secondary">
+                                +{dayShifts.length - 2}名
+                              </span>
+                            )}
+                          </div>
                         )}
                       </button>
                     )
@@ -172,9 +186,18 @@ export default function ShiftViewPage() {
                       <div className="w-8 h-8 rounded-full bg-primary-light text-primary flex items-center justify-center text-sm font-bold">
                         {shift.profiles?.name?.charAt(0)}
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">{shift.profiles?.name}</p>
                         <p className="text-xs text-secondary">{shift.stores?.name}</p>
+                        {shift.start_time && shift.end_time && (
+                          <p className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                            <Clock size={10} />
+                            {shift.start_time.substring(0, 5)} 〜 {shift.end_time.substring(0, 5)}
+                          </p>
+                        )}
+                        {shift.notes && (
+                          <p className="text-xs text-secondary mt-0.5">{shift.notes}</p>
+                        )}
                       </div>
                     </div>
                   ))}

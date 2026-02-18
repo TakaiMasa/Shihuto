@@ -5,7 +5,7 @@ import { useAuth } from '@/components/auth-provider'
 import { useParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { Clock, Coffee, LogOut as LogOutIcon, Loader2, Play } from 'lucide-react'
+import { Clock, Coffee, LogOut as LogOutIcon, Loader2, Play, AlertCircle } from 'lucide-react'
 import { cn, formatTime } from '@/lib/utils'
 import type { Attendance, Store } from '@/lib/types'
 
@@ -20,8 +20,8 @@ function getStatus(attendance: Attendance | null): AttendanceStatus {
 }
 
 const storeNames: Record<string, string> = {
-  shiki: '麺屋四季',
-  moday: 'RAMEN MODAY',
+  sui: '麺屋 水',
+  monday: 'RAMEN MONDAY',
 }
 
 export default function AttendancePage() {
@@ -44,27 +44,33 @@ export default function AttendancePage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    setError(null)
 
-    const { data: storeData } = await supabase
+    const { data: storeData, error: storeError } = await supabase
       .from('stores')
       .select('*')
       .eq('code', storeCode)
-      .single()
+      .maybeSingle()
+
+    if (storeError || !storeData) {
+      setError('店舗情報の取得に失敗しました。ページを再読み込みしてください。')
+      setStore(null)
+      setLoading(false)
+      return
+    }
 
     setStore(storeData as Store)
 
-    if (storeData) {
-      const today = format(new Date(), 'yyyy-MM-dd')
-      const { data: att } = await supabase
-        .from('attendances')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('store_id', storeData.id)
-        .eq('work_date', today)
-        .single()
+    const today = format(new Date(), 'yyyy-MM-dd')
+    const { data: att } = await supabase
+      .from('attendances')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('store_id', storeData.id)
+      .eq('work_date', today)
+      .maybeSingle()
 
-      setAttendance(att as Attendance | null)
-    }
+    setAttendance(att as Attendance | null)
     setLoading(false)
   }, [storeCode, supabase, user.id])
 
@@ -73,7 +79,10 @@ export default function AttendancePage() {
   }, [fetchData])
 
   const handleAction = async (action: 'clock_in' | 'break_start' | 'break_end' | 'clock_out') => {
-    if (!profile || !store) return
+    if (!profile || !store) {
+      setError('店舗情報が読み込まれていません。ページを再読み込みしてください。')
+      return
+    }
     setActionLoading(true)
     setError(null)
 
@@ -91,10 +100,12 @@ export default function AttendancePage() {
             clock_in: now,
           })
           .select()
-          .single()
+          .maybeSingle()
 
         if (insertError) {
           setError(`出勤打刻に失敗しました: ${insertError.message}`)
+        } else if (!data) {
+          setError('出勤打刻に失敗しました。再度お試しください。')
         } else {
           setAttendance(data as Attendance)
         }
@@ -110,11 +121,13 @@ export default function AttendancePage() {
           .update({ [action]: now })
           .eq('id', attendance.id)
           .select()
-          .single()
+          .maybeSingle()
 
         if (updateError) {
           const actionLabel = { break_start: '休憩開始', break_end: '休憩終了', clock_out: '退勤' }[action]
           setError(`${actionLabel}の打刻に失敗しました: ${updateError.message}`)
+        } else if (!data) {
+          setError('打刻の更新に失敗しました。ページを再読み込みしてください。')
         } else {
           setAttendance(data as Attendance)
         }
@@ -133,6 +146,22 @@ export default function AttendancePage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="animate-spin text-primary" size={40} />
+      </div>
+    )
+  }
+
+  if (!store) {
+    return (
+      <div className="max-w-md mx-auto text-center py-20">
+        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
+        <p className="text-foreground font-semibold mb-2">店舗情報を取得できませんでした</p>
+        <p className="text-secondary text-sm mb-6">ネットワーク接続を確認し、再読み込みしてください。</p>
+        <button
+          onClick={() => fetchData()}
+          className="px-6 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-all"
+        >
+          再読み込み
+        </button>
       </div>
     )
   }
