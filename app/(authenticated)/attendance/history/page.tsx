@@ -24,8 +24,12 @@ export default function AttendanceHistoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({
     clock_in: '',
-    break_start: '',
-    break_end: '',
+    break1_start: '',
+    break1_end: '',
+    break2_start: '',
+    break2_end: '',
+    break3_start: '',
+    break3_end: '',
     clock_out: '',
     memo: '',
   })
@@ -54,11 +58,16 @@ export default function AttendanceHistoryPage() {
 
   const startEdit = (att: Attendance) => {
     setEditingId(att.id)
+    const fmt = (v: string | null) => v ? format(new Date(v), "yyyy-MM-dd'T'HH:mm") : ''
     setEditForm({
-      clock_in: att.clock_in ? format(new Date(att.clock_in), "yyyy-MM-dd'T'HH:mm") : '',
-      break_start: att.break_start ? format(new Date(att.break_start), "yyyy-MM-dd'T'HH:mm") : '',
-      break_end: att.break_end ? format(new Date(att.break_end), "yyyy-MM-dd'T'HH:mm") : '',
-      clock_out: att.clock_out ? format(new Date(att.clock_out), "yyyy-MM-dd'T'HH:mm") : '',
+      clock_in: fmt(att.clock_in),
+      break1_start: fmt(att.break1_start),
+      break1_end: fmt(att.break1_end),
+      break2_start: fmt(att.break2_start),
+      break2_end: fmt(att.break2_end),
+      break3_start: fmt(att.break3_start),
+      break3_end: fmt(att.break3_end),
+      clock_out: fmt(att.clock_out),
       memo: att.memo || '',
     })
   }
@@ -70,11 +79,17 @@ export default function AttendanceHistoryPage() {
   const saveEdit = async () => {
     if (!editingId) return
 
+    const toIso = (v: string) => v ? new Date(v).toISOString() : null
+
     const updates: Record<string, string | null> = {
-      clock_in: editForm.clock_in ? new Date(editForm.clock_in).toISOString() : null,
-      break_start: editForm.break_start ? new Date(editForm.break_start).toISOString() : null,
-      break_end: editForm.break_end ? new Date(editForm.break_end).toISOString() : null,
-      clock_out: editForm.clock_out ? new Date(editForm.clock_out).toISOString() : null,
+      clock_in: toIso(editForm.clock_in),
+      break1_start: toIso(editForm.break1_start),
+      break1_end: toIso(editForm.break1_end),
+      break2_start: toIso(editForm.break2_start),
+      break2_end: toIso(editForm.break2_end),
+      break3_start: toIso(editForm.break3_start),
+      break3_end: toIso(editForm.break3_end),
+      clock_out: toIso(editForm.clock_out),
       memo: editForm.memo || null,
     }
 
@@ -95,13 +110,20 @@ export default function AttendanceHistoryPage() {
 
   const totalWorkMinutes = attendances.reduce((sum, a) => sum + (a.work_minutes || 0), 0)
 
+  const formatBreakSummary = (att: Attendance) => {
+    const breaks: string[] = []
+    if (att.break1_start) breaks.push(`${formatTime(att.break1_start)}-${formatTime(att.break1_end)}`)
+    if (att.break2_start) breaks.push(`${formatTime(att.break2_start)}-${formatTime(att.break2_end)}`)
+    if (att.break3_start) breaks.push(`${formatTime(att.break3_start)}-${formatTime(att.break3_end)}`)
+    return breaks.length > 0 ? breaks : ['-']
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-foreground mb-2">勤怠履歴</h1>
       <p className="text-secondary text-sm mb-6">自分の勤怠記録を確認・修正できます</p>
 
       <div className="bg-card rounded-xl border border-border shadow-sm">
-        {/* ヘッダー */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <button
             onClick={() => setCurrentMonth(addMonths(currentMonth, -1))}
@@ -125,7 +147,6 @@ export default function AttendanceHistoryPage() {
           </button>
         </div>
 
-        {/* テーブル */}
         <div className="overflow-x-auto">
           {loading ? (
             <div className="flex items-center justify-center py-20">
@@ -142,8 +163,7 @@ export default function AttendanceHistoryPage() {
                   <th className="px-4 py-3 text-left font-medium text-secondary">日付</th>
                   <th className="px-4 py-3 text-left font-medium text-secondary">店舗</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">出勤</th>
-                  <th className="px-4 py-3 text-center font-medium text-secondary">休憩開始</th>
-                  <th className="px-4 py-3 text-center font-medium text-secondary">休憩終了</th>
+                  <th className="px-4 py-3 text-center font-medium text-secondary">休憩</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">退勤</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">実働</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">操作</th>
@@ -158,37 +178,51 @@ export default function AttendanceHistoryPage() {
                           {formatDate(att.work_date, 'M/d（E）')}
                         </td>
                         <td className="px-4 py-3">{att.stores?.name}</td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="datetime-local"
-                            value={editForm.clock_in}
-                            onChange={(e) => setEditForm({ ...editForm, clock_in: e.target.value })}
-                            className="w-full px-2 py-1 text-xs rounded border border-border"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="datetime-local"
-                            value={editForm.break_start}
-                            onChange={(e) => setEditForm({ ...editForm, break_start: e.target.value })}
-                            className="w-full px-2 py-1 text-xs rounded border border-border"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="datetime-local"
-                            value={editForm.break_end}
-                            onChange={(e) => setEditForm({ ...editForm, break_end: e.target.value })}
-                            className="w-full px-2 py-1 text-xs rounded border border-border"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="datetime-local"
-                            value={editForm.clock_out}
-                            onChange={(e) => setEditForm({ ...editForm, clock_out: e.target.value })}
-                            className="w-full px-2 py-1 text-xs rounded border border-border"
-                          />
+                        <td className="px-2 py-2" colSpan={3}>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-secondary w-12">出勤</label>
+                              <input type="datetime-local" value={editForm.clock_in}
+                                onChange={(e) => setEditForm({ ...editForm, clock_in: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-secondary w-12">休憩1</label>
+                              <input type="datetime-local" value={editForm.break1_start}
+                                onChange={(e) => setEditForm({ ...editForm, break1_start: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                              <span className="text-xs">〜</span>
+                              <input type="datetime-local" value={editForm.break1_end}
+                                onChange={(e) => setEditForm({ ...editForm, break1_end: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-secondary w-12">休憩2</label>
+                              <input type="datetime-local" value={editForm.break2_start}
+                                onChange={(e) => setEditForm({ ...editForm, break2_start: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                              <span className="text-xs">〜</span>
+                              <input type="datetime-local" value={editForm.break2_end}
+                                onChange={(e) => setEditForm({ ...editForm, break2_end: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-secondary w-12">休憩3</label>
+                              <input type="datetime-local" value={editForm.break3_start}
+                                onChange={(e) => setEditForm({ ...editForm, break3_start: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                              <span className="text-xs">〜</span>
+                              <input type="datetime-local" value={editForm.break3_end}
+                                onChange={(e) => setEditForm({ ...editForm, break3_end: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-secondary w-12">退勤</label>
+                              <input type="datetime-local" value={editForm.clock_out}
+                                onChange={(e) => setEditForm({ ...editForm, clock_out: e.target.value })}
+                                className="flex-1 px-2 py-1 text-xs rounded border border-border" />
+                            </div>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-center">-</td>
                         <td className="px-4 py-3">
@@ -209,8 +243,13 @@ export default function AttendanceHistoryPage() {
                         </td>
                         <td className="px-4 py-3 text-secondary">{att.stores?.name}</td>
                         <td className="px-4 py-3 text-center">{formatTime(att.clock_in)}</td>
-                        <td className="px-4 py-3 text-center">{formatTime(att.break_start)}</td>
-                        <td className="px-4 py-3 text-center">{formatTime(att.break_end)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="space-y-0.5">
+                            {formatBreakSummary(att).map((b, i) => (
+                              <p key={i} className="text-xs">{b}</p>
+                            ))}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-center">{formatTime(att.clock_out)}</td>
                         <td className="px-4 py-3 text-center font-medium">
                           {att.work_minutes != null ? formatMinutesToHours(att.work_minutes) : '-'}

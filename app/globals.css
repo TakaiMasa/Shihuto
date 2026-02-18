@@ -44,6 +44,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  /* iPhone ノッチ・Dynamic Island 対応 */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* スクロールバーのスタイリング */

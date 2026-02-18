@@ -61,8 +61,12 @@ export interface Attendance {
   store_id: string
   work_date: string
   clock_in: string | null
-  break_start: string | null
-  break_end: string | null
+  break1_start: string | null
+  break1_end: string | null
+  break2_start: string | null
+  break2_end: string | null
+  break3_start: string | null
+  break3_end: string | null
   clock_out: string | null
   work_minutes: number | null
   break_minutes: number | null

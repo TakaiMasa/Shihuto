@@ -1,5 +1,6 @@
 import AuthProvider from '@/components/auth-provider'
 import AuthenticatedShell from '@/components/authenticated-shell'
+import PwaInstallPrompt from '@/components/pwa-install-prompt'
 
 export default function AuthenticatedLayout({
   children,
@@ -9,6 +10,7 @@ export default function AuthenticatedLayout({
   return (
     <AuthProvider>
       <AuthenticatedShell>{children}</AuthenticatedShell>
+      <PwaInstallPrompt />
     </AuthProvider>
   )
 }

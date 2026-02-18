@@ -9,14 +9,51 @@ import { Clock, Coffee, LogOut as LogOutIcon, Loader2, Play, AlertCircle } from 
 import { cn, formatTime } from '@/lib/utils'
 import type { Attendance, Store } from '@/lib/types'
 
-type AttendanceStatus = 'not_started' | 'clocked_in' | 'on_break' | 'break_ended' | 'clocked_out'
+type AttendanceStatus = 'not_started' | 'clocked_in' | 'on_break' | 'clocked_out'
+
+function getCurrentBreakNumber(att: Attendance): number {
+  if (att.break3_start) return 3
+  if (att.break2_start) return 2
+  if (att.break1_start) return 1
+  return 0
+}
+
+function isOnBreak(att: Attendance): boolean {
+  if (att.break3_start && !att.break3_end) return true
+  if (att.break2_start && !att.break2_end) return true
+  if (att.break1_start && !att.break1_end) return true
+  return false
+}
+
+function getCompletedBreaks(att: Attendance): number {
+  let count = 0
+  if (att.break1_start && att.break1_end) count++
+  if (att.break2_start && att.break2_end) count++
+  if (att.break3_start && att.break3_end) count++
+  return count
+}
+
+function canTakeMoreBreaks(att: Attendance): boolean {
+  return getCompletedBreaks(att) + (isOnBreak(att) ? 1 : 0) < 3
+}
 
 function getStatus(attendance: Attendance | null): AttendanceStatus {
   if (!attendance || !attendance.clock_in) return 'not_started'
   if (attendance.clock_out) return 'clocked_out'
-  if (attendance.break_start && !attendance.break_end) return 'on_break'
-  if (attendance.break_start && attendance.break_end) return 'break_ended'
+  if (isOnBreak(attendance)) return 'on_break'
   return 'clocked_in'
+}
+
+function getStatusLabel(att: Attendance | null): string {
+  if (!att || !att.clock_in) return '未出勤'
+  if (att.clock_out) return '退勤済'
+  if (isOnBreak(att)) {
+    const breakNum = getCurrentBreakNumber(att)
+    return `休憩${breakNum}回目`
+  }
+  const completed = getCompletedBreaks(att)
+  if (completed > 0) return `出勤中（休憩${completed}回済）`
+  return '出勤中'
 }
 
 const storeNames: Record<string, string> = {
@@ -36,7 +73,6 @@ export default function AttendancePage() {
   const [error, setError] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(new Date())
 
-  // 現在時刻を毎秒更新
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
@@ -78,64 +114,99 @@ export default function AttendancePage() {
     fetchData()
   }, [fetchData])
 
-  const handleAction = async (action: 'clock_in' | 'break_start' | 'break_end' | 'clock_out') => {
-    if (!profile || !store) {
-      setError('店舗情報が読み込まれていません。ページを再読み込みしてください。')
-      return
-    }
+  const handleClockIn = async () => {
+    if (!profile || !store) return
     setActionLoading(true)
     setError(null)
 
     const now = new Date().toISOString()
     const today = format(new Date(), 'yyyy-MM-dd')
 
-    try {
-      if (action === 'clock_in') {
-        const { data, error: insertError } = await supabase
-          .from('attendances')
-          .insert({
-            user_id: profile.id,
-            store_id: store.id,
-            work_date: today,
-            clock_in: now,
-          })
-          .select()
-          .maybeSingle()
+    const { data, error: insertError } = await supabase
+      .from('attendances')
+      .insert({
+        user_id: profile.id,
+        store_id: store.id,
+        work_date: today,
+        clock_in: now,
+      })
+      .select()
+      .maybeSingle()
 
-        if (insertError) {
-          setError(`出勤打刻に失敗しました: ${insertError.message}`)
-        } else if (!data) {
-          setError('出勤打刻に失敗しました。再度お試しください。')
-        } else {
-          setAttendance(data as Attendance)
-        }
-      } else {
-        if (!attendance) {
-          setError('勤怠レコードが見つかりません。ページを再読み込みしてください。')
-          setActionLoading(false)
-          return
-        }
-
-        const { data, error: updateError } = await supabase
-          .from('attendances')
-          .update({ [action]: now })
-          .eq('id', attendance.id)
-          .select()
-          .maybeSingle()
-
-        if (updateError) {
-          const actionLabel = { break_start: '休憩開始', break_end: '休憩終了', clock_out: '退勤' }[action]
-          setError(`${actionLabel}の打刻に失敗しました: ${updateError.message}`)
-        } else if (!data) {
-          setError('打刻の更新に失敗しました。ページを再読み込みしてください。')
-        } else {
-          setAttendance(data as Attendance)
-        }
-      }
-    } catch {
-      setError('通信エラーが発生しました。再度お試しください。')
+    if (insertError) {
+      setError(`出勤打刻に失敗しました: ${insertError.message}`)
+    } else if (data) {
+      setAttendance(data as Attendance)
     }
+    setActionLoading(false)
+  }
 
+  const handleBreakStart = async () => {
+    if (!attendance) return
+    setActionLoading(true)
+    setError(null)
+
+    const now = new Date().toISOString()
+    const breakNum = getCompletedBreaks(attendance) + 1
+    const field = `break${breakNum}_start` as keyof Attendance
+
+    const { data, error: updateError } = await supabase
+      .from('attendances')
+      .update({ [field]: now })
+      .eq('id', attendance.id)
+      .select()
+      .maybeSingle()
+
+    if (updateError) {
+      setError(`休憩開始の打刻に失敗しました: ${updateError.message}`)
+    } else if (data) {
+      setAttendance(data as Attendance)
+    }
+    setActionLoading(false)
+  }
+
+  const handleBreakEnd = async () => {
+    if (!attendance) return
+    setActionLoading(true)
+    setError(null)
+
+    const now = new Date().toISOString()
+    const breakNum = getCurrentBreakNumber(attendance)
+    const field = `break${breakNum}_end` as keyof Attendance
+
+    const { data, error: updateError } = await supabase
+      .from('attendances')
+      .update({ [field]: now })
+      .eq('id', attendance.id)
+      .select()
+      .maybeSingle()
+
+    if (updateError) {
+      setError(`休憩終了の打刻に失敗しました: ${updateError.message}`)
+    } else if (data) {
+      setAttendance(data as Attendance)
+    }
+    setActionLoading(false)
+  }
+
+  const handleClockOut = async () => {
+    if (!attendance) return
+    setActionLoading(true)
+    setError(null)
+
+    const now = new Date().toISOString()
+    const { data, error: updateError } = await supabase
+      .from('attendances')
+      .update({ clock_out: now })
+      .eq('id', attendance.id)
+      .select()
+      .maybeSingle()
+
+    if (updateError) {
+      setError(`退勤の打刻に失敗しました: ${updateError.message}`)
+    } else if (data) {
+      setAttendance(data as Attendance)
+    }
     setActionLoading(false)
   }
 
@@ -168,13 +239,11 @@ export default function AttendancePage() {
 
   return (
     <div className="max-w-md mx-auto">
-      {/* 店舗名ヘッダー */}
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-foreground">{storeName}</h1>
         <p className="text-secondary mt-1">{profile.name} さん</p>
       </div>
 
-      {/* 現在時刻 */}
       <div className="text-center mb-8">
         <p className="text-5xl font-bold text-foreground tabular-nums">
           {format(currentTime, 'HH:mm:ss')}
@@ -184,14 +253,12 @@ export default function AttendancePage() {
         </p>
       </div>
 
-      {/* エラー表示 */}
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
           {error}
         </div>
       )}
 
-      {/* ステータス */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-6 p-6">
         <div className="flex items-center justify-center gap-2 mb-4">
           <div
@@ -200,46 +267,85 @@ export default function AttendancePage() {
               status === 'not_started' && 'bg-slate-300',
               status === 'clocked_in' && 'bg-green-400 animate-pulse',
               status === 'on_break' && 'bg-amber-400 animate-pulse',
-              status === 'break_ended' && 'bg-green-400 animate-pulse',
               status === 'clocked_out' && 'bg-slate-400'
             )}
           />
           <span className="text-sm font-medium text-secondary">
-            {status === 'not_started' && '未出勤'}
-            {status === 'clocked_in' && '出勤中'}
-            {status === 'on_break' && '休憩中'}
-            {status === 'break_ended' && '出勤中（休憩済）'}
-            {status === 'clocked_out' && '退勤済'}
+            {getStatusLabel(attendance)}
           </span>
         </div>
 
-        {/* 打刻情報 */}
         {attendance && (
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <div className="text-center p-3 rounded-lg bg-muted">
-              <p className="text-xs text-secondary mb-1">出勤</p>
-              <p className="text-lg font-semibold text-foreground">
-                {formatTime(attendance.clock_in)}
-              </p>
+          <div className="space-y-3 mb-6">
+            {/* 出勤・退勤 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-xs text-secondary mb-1">出勤</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {formatTime(attendance.clock_in)}
+                </p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-muted">
+                <p className="text-xs text-secondary mb-1">退勤</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {formatTime(attendance.clock_out)}
+                </p>
+              </div>
             </div>
-            <div className="text-center p-3 rounded-lg bg-muted">
-              <p className="text-xs text-secondary mb-1">退勤</p>
-              <p className="text-lg font-semibold text-foreground">
-                {formatTime(attendance.clock_out)}
-              </p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-muted">
-              <p className="text-xs text-secondary mb-1">休憩開始</p>
-              <p className="text-lg font-semibold text-foreground">
-                {formatTime(attendance.break_start)}
-              </p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-muted">
-              <p className="text-xs text-secondary mb-1">休憩終了</p>
-              <p className="text-lg font-semibold text-foreground">
-                {formatTime(attendance.break_end)}
-              </p>
-            </div>
+
+            {/* 休憩1 */}
+            {attendance.break1_start && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                  <p className="text-xs text-amber-700 mb-1">休憩1 開始</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break1_start)}
+                  </p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                  <p className="text-xs text-amber-700 mb-1">休憩1 終了</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break1_end)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 休憩2 */}
+            {attendance.break2_start && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center p-2.5 rounded-lg bg-orange-50 border border-orange-100">
+                  <p className="text-xs text-orange-700 mb-1">休憩2 開始</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break2_start)}
+                  </p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-orange-50 border border-orange-100">
+                  <p className="text-xs text-orange-700 mb-1">休憩2 終了</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break2_end)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 休憩3 */}
+            {attendance.break3_start && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center p-2.5 rounded-lg bg-red-50 border border-red-100">
+                  <p className="text-xs text-red-700 mb-1">休憩3 開始</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break3_start)}
+                  </p>
+                </div>
+                <div className="text-center p-2.5 rounded-lg bg-red-50 border border-red-100">
+                  <p className="text-xs text-red-700 mb-1">休憩3 終了</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {formatTime(attendance.break3_end)}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -247,7 +353,7 @@ export default function AttendancePage() {
         <div className="space-y-3">
           {status === 'not_started' && (
             <button
-              onClick={() => handleAction('clock_in')}
+              onClick={handleClockIn}
               disabled={actionLoading}
               className="w-full py-4 rounded-xl bg-green-500 text-white font-bold text-lg hover:bg-green-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
             >
@@ -258,16 +364,18 @@ export default function AttendancePage() {
 
           {status === 'clocked_in' && (
             <>
+              {attendance && canTakeMoreBreaks(attendance) && (
+                <button
+                  onClick={handleBreakStart}
+                  disabled={actionLoading}
+                  className="w-full py-4 rounded-xl bg-amber-500 text-white font-bold text-lg hover:bg-amber-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
+                >
+                  {actionLoading ? <Loader2 className="animate-spin" size={24} /> : <Coffee size={24} />}
+                  休憩開始（{getCompletedBreaks(attendance) + 1}回目）
+                </button>
+              )}
               <button
-                onClick={() => handleAction('break_start')}
-                disabled={actionLoading}
-                className="w-full py-4 rounded-xl bg-amber-500 text-white font-bold text-lg hover:bg-amber-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
-              >
-                {actionLoading ? <Loader2 className="animate-spin" size={24} /> : <Coffee size={24} />}
-                休憩開始
-              </button>
-              <button
-                onClick={() => handleAction('clock_out')}
+                onClick={handleClockOut}
                 disabled={actionLoading}
                 className="w-full py-4 rounded-xl bg-slate-500 text-white font-bold text-lg hover:bg-slate-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
               >
@@ -279,23 +387,12 @@ export default function AttendancePage() {
 
           {status === 'on_break' && (
             <button
-              onClick={() => handleAction('break_end')}
+              onClick={handleBreakEnd}
               disabled={actionLoading}
               className="w-full py-4 rounded-xl bg-blue-500 text-white font-bold text-lg hover:bg-blue-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
             >
               {actionLoading ? <Loader2 className="animate-spin" size={24} /> : <Clock size={24} />}
               休憩終了
-            </button>
-          )}
-
-          {status === 'break_ended' && (
-            <button
-              onClick={() => handleAction('clock_out')}
-              disabled={actionLoading}
-              className="w-full py-4 rounded-xl bg-slate-500 text-white font-bold text-lg hover:bg-slate-600 disabled:opacity-50 transition-all flex items-center justify-center gap-3"
-            >
-              {actionLoading ? <Loader2 className="animate-spin" size={24} /> : <LogOutIcon size={24} />}
-              退勤
             </button>
           )}
 
