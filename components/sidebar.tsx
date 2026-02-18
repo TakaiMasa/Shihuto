@@ -132,7 +132,8 @@ export default function Sidebar() {
       {/* モバイルハンバーガーボタン */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-sidebar text-white shadow-lg"
+        className="lg:hidden fixed left-4 z-50 p-2 rounded-lg bg-sidebar text-white shadow-lg"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
       >
         <Menu size={24} />
       </button>
@@ -154,7 +155,8 @@ export default function Sidebar() {
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 text-sidebar-text hover:text-white"
+          className="absolute right-4 text-sidebar-text hover:text-white"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
         >
           <X size={20} />
         </button>
