@@ -2,16 +2,17 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/components/auth-provider'
-import { format, addMonths } from 'date-fns'
+import { format, addMonths, endOfMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Wallet } from 'lucide-react'
-import { formatCurrency, formatMinutesToHours } from '@/lib/utils'
+import { formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary } from '@/lib/types'
 
 export default function SalaryViewPage() {
   const { user, supabase } = useAuth()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [salary, setSalary] = useState<Salary | null>(null)
+  const [attendances, setAttendances] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
@@ -19,14 +20,25 @@ export default function SalaryViewPage() {
   const fetchSalary = useCallback(async () => {
     setLoading(true)
 
-    const { data } = await supabase
-      .from('salaries')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('year_month', yearMonth)
-      .single()
+    const [{ data: salaryData }, { data: attendanceData }] = await Promise.all([
+      supabase
+        .from('salaries')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('year_month', yearMonth)
+        .single(),
+      supabase
+        .from('attendances')
+        .select('*, stores(name, has_transportation_fee)')
+        .eq('user_id', user.id)
+        .gte('work_date', `${yearMonth}-01`)
+        .lte('work_date', format(endOfMonth(new Date(`${yearMonth}-01`)), 'yyyy-MM-dd'))
+        .not('clock_out', 'is', null)
+        .order('work_date', { ascending: true }),
+    ])
 
-    setSalary(data as Salary | null)
+    setSalary(salaryData as Salary | null)
+    setAttendances(attendanceData || [])
     setLoading(false)
   }, [yearMonth, supabase, user.id])
 
@@ -69,7 +81,8 @@ export default function SalaryViewPage() {
           <p className="text-xs text-secondary mt-2">管理者が給与計算を行うと表示されます</p>
         </div>
       ) : (
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg mx-auto space-y-4">
+          {/* 月次サマリー */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             {/* ヘッダー */}
             <div className="bg-primary px-6 py-5 text-white">
@@ -132,6 +145,46 @@ export default function SalaryViewPage() {
               </div>
             </div>
           </div>
+
+          {/* 日別内訳 */}
+          {attendances.length > 0 && (
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-border">
+                <h3 className="font-semibold text-foreground text-sm">日別内訳</h3>
+              </div>
+              <div className="divide-y divide-border">
+                {attendances.map((att) => {
+                  const dailyBase = Math.floor(
+                    (att.work_minutes || 0) / 60 * salary.hourly_wage
+                  )
+                  const dailyTransport = att.stores?.has_transportation_fee
+                    ? salary.transportation_fee_per_day
+                    : 0
+                  const dailyTotal = dailyBase + dailyTransport
+                  return (
+                    <div key={att.id} className="px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {formatDate(att.work_date, 'M月d日(E)')}
+                        </p>
+                        <p className="text-xs text-secondary mt-0.5">
+                          {att.stores?.name || '-'} · {formatMinutesToHours(att.work_minutes || 0)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-primary">{formatCurrency(dailyTotal)}</p>
+                        {dailyTransport > 0 && (
+                          <p className="text-xs text-secondary mt-0.5">
+                            交通費 +{formatCurrency(dailyTransport)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

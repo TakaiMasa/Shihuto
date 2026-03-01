@@ -11,7 +11,7 @@ import {
   getDay,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Store, Shift, ShiftUnavailable, ShiftPreference } from '@/lib/types'
 
@@ -19,6 +19,8 @@ interface ShiftEntry {
   storeId: string
   startTime: string
   endTime: string
+  breakStartTime: string
+  breakEndTime: string
   notes: string
 }
 
@@ -71,6 +73,8 @@ export default function ShiftManagePage() {
         storeId: s.store_id,
         startTime: s.start_time ? s.start_time.substring(0, 5) : '',
         endTime: s.end_time ? s.end_time.substring(0, 5) : '',
+        breakStartTime: s.break_start_time ? s.break_start_time.substring(0, 5) : '',
+        breakEndTime: s.break_end_time ? s.break_end_time.substring(0, 5) : '',
         notes: s.notes || '',
       })
     })
@@ -121,6 +125,8 @@ export default function ShiftManagePage() {
           storeId: selectedStore,
           startTime: pref ? pref.start_time.substring(0, 5) : '',
           endTime: pref ? pref.end_time.substring(0, 5) : '',
+          breakStartTime: '',
+          breakEndTime: '',
           notes: pref?.notes || '',
         })
         return next
@@ -165,7 +171,16 @@ export default function ShiftManagePage() {
       .lte('shift_date', end)
 
     // 新しいシフトを挿入（時間が両方入っているもののみ）
-    const inserts: { user_id: string; store_id: string; shift_date: string; start_time: string | null; end_time: string | null; notes: string | null }[] = []
+    const inserts: {
+      user_id: string
+      store_id: string
+      shift_date: string
+      start_time: string | null
+      end_time: string | null
+      break_start_time: string | null
+      break_end_time: string | null
+      notes: string | null
+    }[] = []
     editingShifts.forEach((entry, key) => {
       if (!entry.startTime || !entry.endTime) return
       const uid = key.substring(0, 36)
@@ -176,6 +191,8 @@ export default function ShiftManagePage() {
         shift_date: shiftDate,
         start_time: entry.startTime || null,
         end_time: entry.endTime || null,
+        break_start_time: entry.breakStartTime || null,
+        break_end_time: entry.breakEndTime || null,
         notes: entry.notes || null,
       })
     })
@@ -222,6 +239,43 @@ export default function ShiftManagePage() {
   const selectedEntry = selectedKey ? editingShifts.get(selectedKey) : undefined
   const selectedPref = selectedKey ? preferenceMap.get(selectedKey) : undefined
   const selectedProfile = selectedCell ? profiles.find((p) => p.id === selectedCell.userId) : undefined
+
+  // 人件費計算ヘルパー（分単位の実働時間を返す）
+  const calcWorkMinutes = (entry: ShiftEntry): number => {
+    if (!entry.startTime || !entry.endTime) return 0
+    const toMin = (t: string) => {
+      const [h, m] = t.split(':').map(Number)
+      return h * 60 + m
+    }
+    let work = toMin(entry.endTime) - toMin(entry.startTime)
+    if (entry.breakStartTime && entry.breakEndTime) {
+      work -= toMin(entry.breakEndTime) - toMin(entry.breakStartTime)
+    }
+    return Math.max(0, work)
+  }
+
+  // 選択スタッフの個人人件費
+  const selectedWorkMinutes = selectedEntry ? calcWorkMinutes(selectedEntry) : 0
+  const selectedLaborCost = selectedProfile
+    ? Math.round((selectedWorkMinutes / 60) * selectedProfile.hourly_wage)
+    : 0
+
+  // 選択日の合計人件費（全スタッフ分）
+  const dailyLaborCost = selectedCell
+    ? (() => {
+        let total = 0
+        editingShifts.forEach((entry, key) => {
+          const keyDate = key.substring(37)
+          if (keyDate !== selectedCell.dateStr) return
+          const uid = key.substring(0, 36)
+          const profile = profiles.find((p) => p.id === uid)
+          if (!profile) return
+          const mins = calcWorkMinutes(entry)
+          total += Math.round((mins / 60) * profile.hourly_wage)
+        })
+        return total
+      })()
+    : 0
 
   return (
     <div>
@@ -311,7 +365,7 @@ export default function ShiftManagePage() {
               </thead>
               <tbody>
                 {profiles
-                  .filter((p) => p.role === 'staff')
+                  .filter((p) => p.is_active)
                   .map((profile) => (
                     <tr key={profile.id} className="border-b border-border hover:bg-muted/30">
                       <td className="sticky left-0 bg-card px-4 py-3 font-medium text-foreground">
@@ -385,6 +439,27 @@ export default function ShiftManagePage() {
               </button>
             </div>
 
+            {/* 人件費サマリー */}
+            {selectedEntry?.startTime && selectedEntry?.endTime && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-700">
+                  <Banknote size={12} />
+                  <span>
+                    {selectedProfile?.name}の予定: <span className="font-semibold">¥{selectedLaborCost.toLocaleString()}</span>
+                    <span className="text-blue-500 ml-1">
+                      ({Math.floor(selectedWorkMinutes / 60)}h{selectedWorkMinutes % 60 > 0 ? `${selectedWorkMinutes % 60}m` : ''} × ¥{selectedProfile?.hourly_wage.toLocaleString()})
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-xs text-orange-700">
+                  <Banknote size={12} />
+                  <span>
+                    {format(new Date(selectedCell!.dateStr), 'M/d', { locale: ja })} 日計: <span className="font-semibold">¥{dailyLaborCost.toLocaleString()}</span>
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* 希望時間の参考表示 */}
             {selectedPref && (
               <div className="mb-3 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700 flex items-center gap-1.5">
@@ -412,6 +487,39 @@ export default function ShiftManagePage() {
                   onChange={(e) => updateShiftEntry(selectedKey!, 'endTime', e.target.value)}
                   className="px-3 py-2 rounded-lg border border-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
                 />
+              </div>
+              <div className="w-full border-t border-border pt-3 flex flex-wrap items-end gap-3">
+                <span className="text-xs text-secondary font-medium w-full">休憩時間（任意）</span>
+                <div>
+                  <label className="block text-xs text-secondary mb-1">休憩開始</label>
+                  <input
+                    type="time"
+                    value={selectedEntry.breakStartTime}
+                    onChange={(e) => updateShiftEntry(selectedKey!, 'breakStartTime', e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-secondary mb-1">休憩終了</label>
+                  <input
+                    type="time"
+                    value={selectedEntry.breakEndTime}
+                    onChange={(e) => updateShiftEntry(selectedKey!, 'breakEndTime', e.target.value)}
+                    className="px-3 py-2 rounded-lg border border-border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                {selectedEntry.breakStartTime && selectedEntry.breakEndTime && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateShiftEntry(selectedKey!, 'breakStartTime', '')
+                      updateShiftEntry(selectedKey!, 'breakEndTime', '')
+                    }}
+                    className="text-xs text-secondary hover:text-red-500 transition-colors pb-2"
+                  >
+                    休憩をクリア
+                  </button>
+                )}
               </div>
               <div className="flex-1 min-w-[150px]">
                 <label className="block text-xs text-secondary mb-1">備考</label>

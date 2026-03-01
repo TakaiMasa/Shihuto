@@ -98,13 +98,30 @@ export default function AttendancePage() {
     setStore(storeData as Store)
 
     const today = format(new Date(), 'yyyy-MM-dd')
-    const { data: att } = await supabase
+    let { data: att } = await supabase
       .from('attendances')
       .select('*')
       .eq('user_id', user.id)
       .eq('store_id', storeData.id)
       .eq('work_date', today)
       .maybeSingle()
+
+    // 今日の記録がない場合、前日の未退勤レコードを確認（日付をまたいだ出勤に対応）
+    if (!att) {
+      const yesterday = format(new Date(Date.now() - 24 * 60 * 60 * 1000), 'yyyy-MM-dd')
+      const { data: prevAtt } = await supabase
+        .from('attendances')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('store_id', storeData.id)
+        .eq('work_date', yesterday)
+        .is('clock_out', null)
+        .not('clock_in', 'is', null)
+        .maybeSingle()
+      if (prevAtt) {
+        att = prevAtt
+      }
+    }
 
     setAttendance(att as Attendance | null)
     setLoading(false)

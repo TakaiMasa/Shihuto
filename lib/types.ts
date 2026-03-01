@@ -36,6 +36,8 @@ export interface Shift {
   shift_date: string
   start_time: string | null
   end_time: string | null
+  break_start_time: string | null
+  break_end_time: string | null
   notes: string | null
   created_at: string
   updated_at: string

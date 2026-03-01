@@ -8,7 +8,8 @@
       "mcp__supabase__get_logs",
       "mcp__supabase__execute_sql",
       "mcp__supabase__apply_migration",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "mcp__supabase__list_projects"
     ]
   }
 }

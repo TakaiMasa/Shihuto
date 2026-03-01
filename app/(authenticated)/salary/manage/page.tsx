@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { format, addMonths, endOfMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   Calculator,
   FileText,
@@ -14,7 +16,7 @@ import {
   CheckCircle,
   Undo2,
 } from 'lucide-react'
-import { cn, formatCurrency, formatMinutesToHours } from '@/lib/utils'
+import { cn, formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary, Profile } from '@/lib/types'
 
 export default function SalaryManagePage() {
@@ -24,8 +26,17 @@ export default function SalaryManagePage() {
   const [loading, setLoading] = useState(true)
   const [calculating, setCalculating] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null)
+  const [staffAttendances, setStaffAttendances] = useState<Record<string, any[]>>({})
+  const [loadingDaily, setLoadingDaily] = useState<string | null>(null)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
+
+  // 月が変わったら展開状態をリセット
+  useEffect(() => {
+    setExpandedStaffId(null)
+    setStaffAttendances({})
+  }, [yearMonth])
 
   const fetchSalaries = useCallback(async () => {
     setLoading(true)
@@ -104,6 +115,7 @@ export default function SalaryManagePage() {
 
     setMessage({ type: 'success', text: '給与計算が完了しました' })
     setCalculating(false)
+    setStaffAttendances({})
     fetchSalaries()
   }
 
@@ -132,6 +144,32 @@ export default function SalaryManagePage() {
         .eq('id', s.id)
     }
     fetchSalaries()
+  }
+
+  const toggleDailyView = async (salary: Salary & { profiles: Profile }) => {
+    const userId = salary.user_id
+
+    if (expandedStaffId === userId) {
+      setExpandedStaffId(null)
+      return
+    }
+
+    if (!staffAttendances[userId]) {
+      setLoadingDaily(userId)
+      const { data: attendances } = await supabase
+        .from('attendances')
+        .select('*, stores(name, has_transportation_fee)')
+        .eq('user_id', userId)
+        .gte('work_date', `${yearMonth}-01`)
+        .lte('work_date', format(endOfMonth(currentMonth), 'yyyy-MM-dd'))
+        .not('clock_out', 'is', null)
+        .order('work_date', { ascending: true })
+
+      setStaffAttendances((prev) => ({ ...prev, [userId]: attendances || [] }))
+      setLoadingDaily(null)
+    }
+
+    setExpandedStaffId(userId)
   }
 
   const handleExportPdf = async (salary: Salary & { profiles: Profile }) => {
@@ -278,66 +316,145 @@ export default function SalaryManagePage() {
               </thead>
               <tbody>
                 {salaries.map((salary) => (
-                  <tr key={salary.id} className="border-b border-border hover:bg-muted/30">
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {salary.profiles?.name}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {formatMinutesToHours(salary.total_work_minutes)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {formatCurrency(salary.hourly_wage)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {formatCurrency(salary.base_salary)}
-                    </td>
-                    <td className="px-4 py-3 text-center">{salary.work_days_shiki}日</td>
-                    <td className="px-4 py-3 text-center">
-                      {formatCurrency(salary.transportation_total)}
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-primary">
-                      {formatCurrency(salary.total_salary)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {salary.is_confirmed ? (
-                        <span className="px-2 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium">
-                          確定
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
-                          未確定
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        {!salary.is_confirmed ? (
-                          <button
-                            onClick={() => handleConfirm(salary.id)}
-                            className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100"
-                            title="確定"
-                          >
-                            <Check size={14} />
-                          </button>
+                  <React.Fragment key={salary.id}>
+                    <tr className="border-b border-border hover:bg-muted/30">
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {salary.profiles?.name}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatMinutesToHours(salary.total_work_minutes)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatCurrency(salary.hourly_wage)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatCurrency(salary.base_salary)}
+                      </td>
+                      <td className="px-4 py-3 text-center">{salary.work_days_shiki}日</td>
+                      <td className="px-4 py-3 text-center">
+                        {formatCurrency(salary.transportation_total)}
+                      </td>
+                      <td className="px-4 py-3 text-center font-bold text-primary">
+                        {formatCurrency(salary.total_salary)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {salary.is_confirmed ? (
+                          <span className="px-2 py-1 rounded-full bg-green-50 text-green-700 text-xs font-medium">
+                            確定
+                          </span>
                         ) : (
-                          <button
-                            onClick={() => handleUnconfirm(salary.id)}
-                            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100"
-                            title="確定取消"
-                          >
-                            <Undo2 size={14} />
-                          </button>
+                          <span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+                            未確定
+                          </span>
                         )}
-                        <button
-                          onClick={() => handleExportPdf(salary)}
-                          className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
-                          title="PDF出力"
-                        >
-                          <FileText size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => toggleDailyView(salary)}
+                            className={cn(
+                              'p-1.5 rounded-lg transition-colors',
+                              expandedStaffId === salary.user_id
+                                ? 'bg-primary/10 text-primary'
+                                : 'bg-muted text-secondary hover:bg-muted/80'
+                            )}
+                            title="日別詳細"
+                          >
+                            {loadingDaily === salary.user_id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : expandedStaffId === salary.user_id ? (
+                              <ChevronUp size={14} />
+                            ) : (
+                              <ChevronDown size={14} />
+                            )}
+                          </button>
+                          {!salary.is_confirmed ? (
+                            <button
+                              onClick={() => handleConfirm(salary.id)}
+                              className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100"
+                              title="確定"
+                            >
+                              <Check size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleUnconfirm(salary.id)}
+                              className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100"
+                              title="確定取消"
+                            >
+                              <Undo2 size={14} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleExportPdf(salary)}
+                            className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
+                            title="PDF出力"
+                          >
+                            <FileText size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {/* 日別内訳の展開行 */}
+                    {expandedStaffId === salary.user_id && (
+                      <tr className="border-b border-border bg-muted/10">
+                        <td colSpan={9} className="px-6 py-4">
+                          <p className="text-xs font-semibold text-secondary mb-3">日別内訳</p>
+                          {(staffAttendances[salary.user_id] || []).length === 0 ? (
+                            <p className="text-xs text-secondary text-center py-2">
+                              この月の勤怠データがありません
+                            </p>
+                          ) : (
+                            <table className="w-full text-xs border border-border rounded-lg overflow-hidden">
+                              <thead>
+                                <tr className="bg-muted/50">
+                                  <th className="px-3 py-2 text-left font-medium text-secondary">日付</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">店舗</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">勤務時間</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">日給</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">交通費</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">日計</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {staffAttendances[salary.user_id].map((att) => {
+                                  const dailyBase = Math.floor(
+                                    (att.work_minutes || 0) / 60 * salary.hourly_wage
+                                  )
+                                  const dailyTransport = att.stores?.has_transportation_fee
+                                    ? salary.transportation_fee_per_day
+                                    : 0
+                                  const dailyTotal = dailyBase + dailyTransport
+                                  return (
+                                    <tr key={att.id} className="border-t border-border">
+                                      <td className="px-3 py-2 text-foreground">
+                                        {formatDate(att.work_date, 'M/d(E)')}
+                                      </td>
+                                      <td className="px-3 py-2 text-center text-secondary">
+                                        {att.stores?.name || '-'}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {formatMinutesToHours(att.work_minutes || 0)}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {formatCurrency(dailyBase)}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {dailyTransport > 0 ? formatCurrency(dailyTransport) : '-'}
+                                      </td>
+                                      <td className="px-3 py-2 text-center font-semibold text-primary">
+                                        {formatCurrency(dailyTotal)}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
               <tfoot>
