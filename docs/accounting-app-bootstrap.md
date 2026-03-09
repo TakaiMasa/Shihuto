@@ -23,7 +23,10 @@ npx create-next-app@latest . --ts --eslint --app --src-dir=false
 このリポジトリに以下を追加済みです。
 
 - `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
-- `Authorization: Bearer <ACCOUNTING_API_KEY>` が必要
+- `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`
+- `GET /api/accounting/stores`
+- `GET /api/accounting/staff?includeInactive=true|false`
+- すべて `Authorization: Bearer <ACCOUNTING_API_KEY>` が必要
 
 返却例:
 
@@ -59,10 +62,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 3. `source_key` でUPSERTして冪等にする
 4. 同期ログ（成功件数/失敗件数）を保存する
 
-## 6. 次に追加するとよいAPI
+## 6. 推奨の同期順序
 
-- `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/accounting/stores`
-- `GET /api/accounting/staff`
+1. `labor-costs` で月次の人件費を取り込む
+2. `stores` と `staff` でマスタ同期する
+3. `attendance-daily` で日次明細を取り込む
 
-段階的に追加して、会計アプリ側の計算責務を明確に保つのがおすすめです。
+この順序で進めると、会計アプリ側で段階的に画面実装しやすくなります。

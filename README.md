@@ -39,7 +39,11 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 This attendance app can expose labor-cost data for a separate accounting app.
 
-- Endpoint: `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
+- Endpoints:
+  - `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
+  - `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`
+  - `GET /api/accounting/stores`
+  - `GET /api/accounting/staff?includeInactive=true|false`
 - Auth: `Authorization: Bearer <ACCOUNTING_API_KEY>`
 - Required env: `ACCOUNTING_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 
