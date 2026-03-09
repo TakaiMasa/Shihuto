@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('attendances')
-      .select('id,user_id,store_id,work_date,clock_in,clock_out,work_minutes,break_minutes,memo,profiles(name),stores(name,code)')
+      .select('id,user_id,store_id,work_date,clock_in,clock_out,work_minutes,break_minutes,memo,profiles(name,hourly_wage),stores(name,code)')
       .gte('work_date', from)
       .lte('work_date', to)
       .order('work_date', { ascending: true })
