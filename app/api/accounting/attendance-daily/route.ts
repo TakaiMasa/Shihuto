@@ -9,13 +9,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const from = request.nextUrl.searchParams.get('from')
-    const to = request.nextUrl.searchParams.get('to')
+    const date = request.nextUrl.searchParams.get('date')
+    const fromParam = request.nextUrl.searchParams.get('from')
+    const toParam = request.nextUrl.searchParams.get('to')
     const storeId = request.nextUrl.searchParams.get('storeId')
+
+    const from = date ?? fromParam
+    const to = date ?? toParam
 
     if (!from || !to || !isDateString(from) || !isDateString(to)) {
       return NextResponse.json(
-        { error: 'from and to are required in YYYY-MM-DD format' },
+        { error: 'Use date=YYYY-MM-DD or from/to in YYYY-MM-DD format' },
         { status: 400 }
       )
     }
@@ -54,6 +58,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       from,
       to,
+      date,
       storeId,
       totalWorkMinutes,
       count: data.length,

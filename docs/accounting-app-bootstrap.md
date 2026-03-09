@@ -23,7 +23,8 @@ npx create-next-app@latest . --ts --eslint --app --src-dir=false
 このリポジトリに以下を追加済みです。
 
 - `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
-- `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`
+- `GET /api/accounting/attendance-daily?date=YYYY-MM-DD`（単日）
+- `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`（期間）
 - `GET /api/accounting/stores`
 - `GET /api/accounting/staff?includeInactive=true|false`
 - すべて `Authorization: Bearer <ACCOUNTING_API_KEY>` が必要

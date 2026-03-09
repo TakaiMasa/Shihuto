@@ -41,7 +41,8 @@ This attendance app can expose labor-cost data for a separate accounting app.
 
 - Endpoints:
   - `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
-  - `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`
+  - `GET /api/accounting/attendance-daily?date=YYYY-MM-DD` (単日)
+  - `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>` (期間)
   - `GET /api/accounting/stores`
   - `GET /api/accounting/staff?includeInactive=true|false`
 - Auth: `Authorization: Bearer <ACCOUNTING_API_KEY>`
