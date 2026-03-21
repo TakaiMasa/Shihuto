@@ -9,11 +9,15 @@ import { ja } from 'date-fns/locale'
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const rawData = atob(base64)
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)))
+  const output = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; i++) {
+    output[i] = rawData.charCodeAt(i)
+  }
+  return output
 }
 
 interface Notification {
@@ -62,9 +66,16 @@ export default function NotificationBell({ placement = 'sidebar' }: { placement?
 
   const handlePushToggle = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('このブラウザはプッシュ通知に対応していません')
+      // iOSでホーム画面追加なしの場合など
+      const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
+      if (isIos) {
+        alert('iPhoneでプッシュ通知を受け取るには、まず「ホーム画面に追加」でアプリをインストールしてください。')
+      } else {
+        alert('このブラウザはプッシュ通知に対応していません。')
+      }
       return
     }
+
     const reg = await navigator.serviceWorker.ready
 
     if (pushEnabled) {
@@ -83,13 +94,13 @@ export default function NotificationBell({ placement = 'sidebar' }: { placement?
       // 購読開始
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
-        alert('通知が許可されませんでした。ブラウザの設定から許可してください。')
+        alert('通知が許可されませんでした。設定アプリ →「通知」から許可してください。')
         return
       }
       try {
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         })
         const json = sub.toJSON()
         await fetch('/api/push/subscribe', {
@@ -100,7 +111,12 @@ export default function NotificationBell({ placement = 'sidebar' }: { placement?
         setPushEnabled(true)
       } catch (err) {
         console.error('Push subscription failed:', err)
-        alert('プッシュ通知の設定に失敗しました')
+        const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
+        if (isIos) {
+          alert('プッシュ通知の設定に失敗しました。\niOS 16.4以上でホーム画面から開いているか確認してください。')
+        } else {
+          alert('プッシュ通知の設定に失敗しました。')
+        }
       }
     }
   }
