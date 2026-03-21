@@ -40,7 +40,7 @@ function typeEmoji(type: string): string {
   }
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ placement = 'sidebar' }: { placement?: 'sidebar' | 'mobile' }) {
   const { supabase, profile } = useAuth()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
@@ -174,11 +174,11 @@ export default function NotificationBell() {
   return (
     <>
       {/* トースト */}
-      <div className="fixed top-4 right-4 z-[200] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed top-4 right-4 left-4 sm:left-auto z-[200] flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className="bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 flex items-center gap-3 min-w-[260px] max-w-[340px] pointer-events-auto"
+            className="bg-white border border-gray-200 shadow-lg rounded-xl px-4 py-3 flex items-center gap-3 w-full sm:min-w-[260px] sm:max-w-[340px] pointer-events-auto"
           >
             <span className="text-lg shrink-0">{typeEmoji(toast.type)}</span>
             <p className="text-sm text-gray-800">{toast.message}</p>
@@ -202,7 +202,12 @@ export default function NotificationBell() {
         </button>
 
         {open && (
-          <div className="absolute left-0 bottom-full mb-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+          <div className={cn(
+            'absolute bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden',
+            placement === 'mobile'
+              ? 'right-0 top-full mt-2 w-[calc(100vw-2rem)] max-w-xs'
+              : 'left-0 bottom-full mb-2 w-80'
+          )}>
             <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-800">通知</h3>
               {'Notification' in window && (

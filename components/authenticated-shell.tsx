@@ -14,7 +14,7 @@ export default function AuthenticatedShell({ children }: { children: React.React
       {/* モバイル用通知ベル（右上固定、管理者のみ） */}
       {isAdmin && (
         <div className="lg:hidden fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}>
-          <NotificationBell />
+          <NotificationBell placement="mobile" />
         </div>
       )}
       <main className="lg:pl-64">
