@@ -110,13 +110,9 @@ export default function NotificationBell({ placement = 'sidebar' }: { placement?
         })
         setPushEnabled(true)
       } catch (err) {
-        console.error('Push subscription failed:', err)
-        const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
-        if (isIos) {
-          alert('プッシュ通知の設定に失敗しました。\niOS 16.4以上でホーム画面から開いているか確認してください。')
-        } else {
-          alert('プッシュ通知の設定に失敗しました。')
-        }
+        const errMsg = err instanceof Error ? err.message : String(err)
+        console.error('Push subscription failed:', errMsg)
+        alert(`プッシュ通知の設定に失敗しました。\n\nエラー: ${errMsg}`)
       }
     }
   }
