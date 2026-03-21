@@ -9,7 +9,9 @@
       "mcp__supabase__execute_sql",
       "mcp__supabase__apply_migration",
       "Bash(npm install:*)",
-      "mcp__supabase__list_projects"
+      "mcp__supabase__list_projects",
+      "Bash(find supabase:*)",
+      "mcp__supabase__deploy_edge_function"
     ]
   }
 }

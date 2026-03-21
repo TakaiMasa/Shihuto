@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { useState } from 'react'
+import NotificationBell from '@/components/notification-bell'
 
 interface NavItem {
   label: string
@@ -115,6 +116,7 @@ export default function Sidebar() {
               {isAdmin ? '管理者' : 'スタッフ'}
             </p>
           </div>
+          {isAdmin && <NotificationBell />}
         </div>
         <button
           onClick={handleLogout}
