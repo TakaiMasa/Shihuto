@@ -92,6 +92,10 @@ export default function NotificationBell({ placement = 'sidebar' }: { placement?
       setPushEnabled(false)
     } else {
       // 購読開始
+      if (!VAPID_PUBLIC_KEY) {
+        alert('サーバーの設定が不完全です。管理者に連絡してください。')
+        return
+      }
       const permission = await Notification.requestPermission()
       if (permission !== 'granted') {
         alert('通知が許可されませんでした。設定アプリ →「通知」から許可してください。')

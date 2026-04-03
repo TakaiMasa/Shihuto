@@ -11,7 +11,7 @@ import {
   getDay,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote, Lock, LockOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Store, Shift, ShiftUnavailable, ShiftPreference } from '@/lib/types'
 
@@ -32,6 +32,7 @@ export default function ShiftManagePage() {
   const [shifts, setShifts] = useState<Shift[]>([])
   const [unavailables, setUnavailables] = useState<ShiftUnavailable[]>([])
   const [preferences, setPreferences] = useState<ShiftPreference[]>([])
+  const [undecideds, setUndecideds] = useState<{ user_id: string; undecided_date: string; notes: string | null }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
@@ -43,17 +44,23 @@ export default function ShiftManagePage() {
   // 選択中のセル（詳細パネル表示用）
   const [selectedCell, setSelectedCell] = useState<{ userId: string; dateStr: string } | null>(null)
 
+  // 確定済み日付: Set<`${storeId}-${dateStr}`>
+  const [confirmedDates, setConfirmedDates] = useState<Set<string>>(new Set())
+  const [confirmingDate, setConfirmingDate] = useState<string | null>(null)
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
-    const [profilesRes, storesRes, shiftsRes, unavailableRes, preferencesRes] = await Promise.all([
+    const [profilesRes, storesRes, shiftsRes, unavailableRes, preferencesRes, confirmationsRes, undecidedRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('is_active', true).order('name'),
       supabase.from('stores').select('*'),
       supabase.from('shifts').select('*').gte('shift_date', start).lte('shift_date', end),
       supabase.from('shift_unavailable').select('*').gte('unavailable_date', start).lte('unavailable_date', end),
       supabase.from('shift_preferences').select('*').gte('preference_date', start).lte('preference_date', end),
+      supabase.from('shift_day_confirmations').select('*').gte('shift_date', start).lte('shift_date', end),
+      supabase.from('shift_undecided').select('user_id, undecided_date, notes').gte('undecided_date', start).lte('undecided_date', end),
     ])
 
     setProfiles(profilesRes.data || [])
@@ -61,6 +68,13 @@ export default function ShiftManagePage() {
     setShifts(shiftsRes.data || [])
     setUnavailables(unavailableRes.data || [])
     setPreferences(preferencesRes.data || [])
+    setUndecideds(undecidedRes.data || [])
+
+    const confirmedSet = new Set<string>()
+    confirmationsRes.data?.forEach((c: { store_id: string; shift_date: string }) => {
+      confirmedSet.add(`${c.store_id}-${c.shift_date}`)
+    })
+    setConfirmedDates(confirmedSet)
 
     if (storesRes.data && storesRes.data.length > 0 && !selectedStore) {
       setSelectedStore(storesRes.data[0].id)
@@ -104,15 +118,57 @@ export default function ShiftManagePage() {
     unavailableDetailMap.set(`${u.user_id}-${u.unavailable_date}`, u)
   })
 
+  // 未定マップ: `${userId}-${dateStr}`
+  const undecidedMap = new Map<string, { notes: string | null }>()
+  undecideds.forEach((u) => {
+    undecidedMap.set(`${u.user_id}-${u.undecided_date}`, { notes: u.notes })
+  })
+
   // 選択店舗の情報
   const currentStore = stores.find((s) => s.id === selectedStore)
   const baseDayOfWeek = currentStore?.base_day_of_week ?? 1
+
+  // 日確定トグル
+  const handleToggleConfirm = async (dateStr: string) => {
+    if (!selectedStore) return
+    const key = `${selectedStore}-${dateStr}`
+    setConfirmingDate(dateStr)
+
+    if (confirmedDates.has(key)) {
+      // 確定解除
+      await supabase
+        .from('shift_day_confirmations')
+        .delete()
+        .eq('store_id', selectedStore)
+        .eq('shift_date', dateStr)
+      setConfirmedDates((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    } else {
+      // 確定
+      const { data: me } = await supabase.auth.getUser()
+      if (!me.user) return
+      await supabase.from('shift_day_confirmations').insert({
+        store_id: selectedStore,
+        shift_date: dateStr,
+        confirmed_by: me.user.id,
+      })
+      setConfirmedDates((prev) => new Set(prev).add(key))
+      // 確定時は選択セルを閉じる
+      setSelectedCell(null)
+    }
+    setConfirmingDate(null)
+  }
 
   // セルクリック
   const handleCellClick = (userId: string, dateStr: string) => {
     const key = `${userId}-${dateStr}`
     const isUnavailable = unavailableDetailMap.has(key)
     if (isUnavailable) return
+    // 確定済み日はロック
+    if (confirmedDates.has(`${selectedStore}-${dateStr}`)) return
 
     setSelectedCell({ userId, dateStr })
 
@@ -348,16 +404,40 @@ export default function ShiftManagePage() {
                   </th>
                   {baseDays.map((day) => {
                     const dayOfWeek = getDay(day)
+                    const dateStr = format(day, 'yyyy-MM-dd')
+                    const isConfirmed = confirmedDates.has(`${selectedStore}-${dateStr}`)
+                    const isConfirming = confirmingDate === dateStr
                     return (
                       <th
-                        key={format(day, 'yyyy-MM-dd')}
+                        key={dateStr}
                         className={cn(
                           'px-2 py-3 text-center font-medium min-w-[80px]',
+                          isConfirmed ? 'bg-green-50' : '',
                           dayOfWeek === 6 ? 'text-blue-500' : dayOfWeek === 0 ? 'text-red-500' : 'text-secondary'
                         )}
                       >
                         <div>{format(day, 'd')}</div>
                         <div className="text-xs">{format(day, 'E', { locale: ja })}</div>
+                        <button
+                          onClick={() => handleToggleConfirm(dateStr)}
+                          disabled={isConfirming}
+                          title={isConfirmed ? '確定を解除' : 'この日を確定'}
+                          className={cn(
+                            'mt-1 inline-flex items-center justify-center w-6 h-6 rounded-full transition-colors',
+                            isConfirmed
+                              ? 'bg-green-100 text-green-600 hover:bg-green-200'
+                              : 'bg-muted text-secondary hover:bg-primary-light hover:text-primary',
+                            isConfirming && 'opacity-50 cursor-not-allowed'
+                          )}
+                        >
+                          {isConfirming ? (
+                            <Loader2 size={10} className="animate-spin" />
+                          ) : isConfirmed ? (
+                            <Lock size={10} />
+                          ) : (
+                            <LockOpen size={10} />
+                          )}
+                        </button>
                       </th>
                     )
                   })}
@@ -377,33 +457,46 @@ export default function ShiftManagePage() {
                         const shiftEntry = editingShifts.get(key)
                         const hasTime = shiftEntry && shiftEntry.startTime && shiftEntry.endTime
                         const isUnavailable = unavailableMap.get(profile.id)?.has(dateStr) || false
+                        const isUndecided = undecidedMap.has(key)
                         const pref = preferenceMap.get(key)
                         const isSelected = selectedCell?.userId === profile.id && selectedCell?.dateStr === dateStr
+                        const isDayConfirmed = confirmedDates.has(`${selectedStore}-${dateStr}`)
 
                         return (
-                          <td key={dateStr} className="px-1 py-2 text-center">
+                          <td key={dateStr} className={cn('px-1 py-2 text-center', isDayConfirmed && 'bg-green-50/50')}>
                             {isUnavailable ? (
                               <div className="flex flex-col items-center">
                                 <span className="inline-flex items-center justify-center w-full py-1.5 rounded-lg bg-red-50 text-red-400 text-xs">
                                   <X size={12} className="mr-0.5" />不可
                                 </span>
                               </div>
+                            ) : isUndecided && !hasTime ? (
+                              <div className="flex flex-col items-center">
+                                <span className="inline-flex items-center justify-center w-full py-1.5 rounded-lg bg-yellow-50 text-yellow-600 text-xs font-medium">
+                                  未定
+                                </span>
+                              </div>
                             ) : (
                               <button
                                 onClick={() => handleCellClick(profile.id, dateStr)}
+                                disabled={isDayConfirmed}
                                 className={cn(
                                   'w-full py-1.5 rounded-lg transition-all text-xs leading-tight',
                                   isSelected && 'ring-2 ring-primary',
-                                  hasTime
-                                    ? 'bg-primary text-white font-medium'
-                                    : 'bg-muted text-secondary hover:bg-primary-light hover:text-primary'
+                                  isDayConfirmed
+                                    ? hasTime
+                                      ? 'bg-green-500 text-white font-medium cursor-default'
+                                      : 'bg-green-50 text-green-400 cursor-default'
+                                    : hasTime
+                                      ? 'bg-primary text-white font-medium'
+                                      : 'bg-muted text-secondary hover:bg-primary-light hover:text-primary'
                                 )}
                               >
                                 {hasTime ? (
                                   <span>{formatTimeShort(shiftEntry.startTime)}-{formatTimeShort(shiftEntry.endTime)}</span>
                                 ) : (
                                   <span className="text-[10px]">
-                                    {pref ? (
+                                    {pref && !isDayConfirmed ? (
                                       <span className="text-green-600">
                                         希望{formatTimeShort(pref.start_time)}-{formatTimeShort(pref.end_time)}
                                       </span>
@@ -420,6 +513,7 @@ export default function ShiftManagePage() {
                     </tr>
                   ))}
               </tbody>
+
             </table>
           )}
         </div>
@@ -547,7 +641,11 @@ export default function ShiftManagePage() {
           <div className="flex flex-wrap items-center gap-4 text-xs text-secondary">
             <div className="flex items-center gap-1.5">
               <div className="w-6 h-4 rounded bg-primary" />
-              <span>確定シフト</span>
+              <span>シフト入力済み</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-4 rounded bg-green-500" />
+              <span>確定済み日</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-6 h-4 rounded bg-red-50 border border-red-200" />
@@ -556,6 +654,10 @@ export default function ShiftManagePage() {
             <div className="flex items-center gap-1.5">
               <Clock size={12} className="text-green-600" />
               <span className="text-green-600">希望時間</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Lock size={12} className="text-green-600" />
+              <span className="text-green-600">日確定済み（編集不可）</span>
             </div>
           </div>
 
