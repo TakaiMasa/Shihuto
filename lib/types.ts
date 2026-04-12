@@ -5,6 +5,7 @@ export interface Store {
   name: string
   code: string
   has_transportation_fee: boolean
+  transportation_fee: number
   base_day_of_week: number
   created_at: string
   updated_at: string
@@ -78,6 +79,15 @@ export interface Attendance {
   // JOIN用
   profiles?: Profile
   stores?: Store
+}
+
+export interface StaffTransportationFee {
+  id: string
+  user_id: string
+  store_id: string
+  fee: number
+  created_at: string
+  updated_at: string
 }
 
 export interface Salary {

@@ -13,6 +13,7 @@ export default function SalaryViewPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [salary, setSalary] = useState<Salary | null>(null)
   const [attendances, setAttendances] = useState<any[]>([])
+  const [feeByStore, setFeeByStore] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
@@ -20,7 +21,7 @@ export default function SalaryViewPage() {
   const fetchSalary = useCallback(async () => {
     setLoading(true)
 
-    const [{ data: salaryData }, { data: attendanceData }] = await Promise.all([
+    const [{ data: salaryData }, { data: attendanceData }, { data: feesData }] = await Promise.all([
       supabase
         .from('salaries')
         .select('*')
@@ -29,16 +30,21 @@ export default function SalaryViewPage() {
         .single(),
       supabase
         .from('attendances')
-        .select('*, stores(name, has_transportation_fee)')
+        .select('*, stores(name)')
         .eq('user_id', user.id)
         .gte('work_date', `${yearMonth}-01`)
         .lte('work_date', format(endOfMonth(new Date(`${yearMonth}-01`)), 'yyyy-MM-dd'))
         .not('clock_out', 'is', null)
         .order('work_date', { ascending: true }),
+      supabase
+        .from('staff_transportation_fees')
+        .select('store_id, fee')
+        .eq('user_id', user.id),
     ])
 
     setSalary(salaryData as Salary | null)
     setAttendances(attendanceData || [])
+    setFeeByStore(new Map(feesData?.map((f) => [f.store_id, f.fee]) || []))
     setLoading(false)
   }, [yearMonth, supabase, user.id])
 
@@ -122,14 +128,8 @@ export default function SalaryViewPage() {
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-border">
-                <span className="text-secondary">麵屋 水 出勤日数</span>
+                <span className="text-secondary">交通費対象 出勤日数</span>
                 <span className="font-medium text-foreground">{salary.work_days_shiki}日</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-border">
-                <span className="text-secondary">交通費（1回あたり）</span>
-                <span className="font-medium text-foreground">
-                  {formatCurrency(salary.transportation_fee_per_day)}
-                </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-border">
                 <span className="text-secondary">交通費合計</span>
@@ -157,9 +157,7 @@ export default function SalaryViewPage() {
                   const dailyBase = Math.floor(
                     (att.work_minutes || 0) / 60 * salary.hourly_wage
                   )
-                  const dailyTransport = att.stores?.has_transportation_fee
-                    ? salary.transportation_fee_per_day
-                    : 0
+                  const dailyTransport = feeByStore.get(att.store_id) || 0
                   const dailyTotal = dailyBase + dailyTransport
                   return (
                     <div key={att.id} className="px-4 py-3 flex items-center justify-between">

@@ -17,6 +17,8 @@ CREATE TABLE stores (
   name text NOT NULL,
   code text NOT NULL UNIQUE,
   has_transportation_fee boolean NOT NULL DEFAULT false,
+  transportation_fee integer NOT NULL DEFAULT 0,
+  base_day_of_week smallint NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -71,6 +73,17 @@ CREATE TABLE attendances (
   UNIQUE (user_id, store_id, work_date)
 );
 
+-- staff_transportation_fees（スタッフ別店舗交通費）
+CREATE TABLE staff_transportation_fees (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  fee integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, store_id)
+);
+
 -- salaries（給与）
 CREATE TABLE salaries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,12 +121,14 @@ CREATE INDEX salaries_user_id_idx ON salaries(user_id);
 
 
 -- ========================================
--- 3. 初期データ（2店舗）
+-- 3. 初期データ（3店舗）
 -- ========================================
 
-INSERT INTO stores (name, code, has_transportation_fee) VALUES
-  ('麺屋四季', 'shiki', true),
-  ('RAMEN MODAY', 'moday', false);
+-- base_day_of_week: 0=日, 1=月, 2=火, 3=水, 4=木, 5=金, 6=土
+INSERT INTO stores (name, code, has_transportation_fee, base_day_of_week) VALUES
+  ('麺屋 水', 'sui', false, 3),
+  ('RAMEN MONDAY', 'monday', false, 1),
+  ('RAMEN FRIDAY', 'friday', false, 5);
 
 
 -- ========================================
@@ -187,6 +202,13 @@ CREATE POLICY "Admins can manage all attendances" ON attendances FOR ALL
 CREATE POLICY "Users can view own salaries" ON salaries FOR SELECT
   USING (auth.uid() = user_id);
 CREATE POLICY "Admins can manage all salaries" ON salaries FOR ALL
+  USING (public.is_admin());
+
+-- staff_transportation_fees: 自分の分を管理可、管理者は全員分を管理可
+ALTER TABLE staff_transportation_fees ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own transportation fees" ON staff_transportation_fees FOR ALL
+  USING (auth.uid() = user_id);
+CREATE POLICY "Admins can manage all transportation fees" ON staff_transportation_fees FOR ALL
   USING (public.is_admin());
 
 
@@ -310,23 +332,28 @@ SELECT
   p.hourly_wage,
   p.transportation_fee,
   m.year_month,
-  COALESCE(shiki.work_days, 0) AS shiki_work_days,
-  COALESCE(moday.work_days, 0) AS moday_work_days,
-  COALESCE(shiki.total_work_minutes, 0) + COALESCE(moday.total_work_minutes, 0) AS total_work_minutes,
-  COALESCE(shiki.total_break_minutes, 0) + COALESCE(moday.total_break_minutes, 0) AS total_break_minutes
+  COALESCE(sui.work_days, 0) AS sui_work_days,
+  COALESCE(monday.work_days, 0) AS monday_work_days,
+  COALESCE(friday.work_days, 0) AS friday_work_days,
+  COALESCE(sui.total_work_minutes, 0) + COALESCE(monday.total_work_minutes, 0) + COALESCE(friday.total_work_minutes, 0) AS total_work_minutes,
+  COALESCE(sui.total_break_minutes, 0) + COALESCE(monday.total_break_minutes, 0) + COALESCE(friday.total_break_minutes, 0) AS total_break_minutes
 FROM profiles p
 CROSS JOIN (
   SELECT DISTINCT TO_CHAR(work_date, 'YYYY-MM') AS year_month
   FROM attendances
 ) m
-LEFT JOIN monthly_attendance_summary shiki
-  ON p.id = shiki.user_id
-  AND m.year_month = shiki.year_month
-  AND shiki.store_code = 'shiki'
-LEFT JOIN monthly_attendance_summary moday
-  ON p.id = moday.user_id
-  AND m.year_month = moday.year_month
-  AND moday.store_code = 'moday'
+LEFT JOIN monthly_attendance_summary sui
+  ON p.id = sui.user_id
+  AND m.year_month = sui.year_month
+  AND sui.store_code = 'sui'
+LEFT JOIN monthly_attendance_summary monday
+  ON p.id = monday.user_id
+  AND m.year_month = monday.year_month
+  AND monday.store_code = 'monday'
+LEFT JOIN monthly_attendance_summary friday
+  ON p.id = friday.user_id
+  AND m.year_month = friday.year_month
+  AND friday.store_code = 'friday'
 WHERE p.is_active = true;
 
 

@@ -30,26 +30,32 @@ function StaffDashboard() {
   const { profile, supabase, user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [totalWorkMinutes, setTotalWorkMinutes] = useState(0)
-  const [shikiDays, setShikiDays] = useState(0)
+  const [transportationTotal, setTransportationTotal] = useState(0)
   const [totalDays, setTotalDays] = useState(0)
 
   const currentYearMonth = getCurrentYearMonth()
-  const transportationTotal = shikiDays * (profile.transportation_fee || 0)
   const estimatedSalary = Math.floor(totalWorkMinutes / 60 * profile.hourly_wage) + transportationTotal
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: myAttendances } = await supabase
-        .from('attendances')
-        .select('work_minutes, break_minutes, store_id, stores(code, has_transportation_fee)')
-        .eq('user_id', user.id)
-        .gte('work_date', format(startOfMonth(new Date()), 'yyyy-MM-dd'))
-        .lte('work_date', format(endOfMonth(new Date()), 'yyyy-MM-dd'))
-        .not('clock_out', 'is', null)
+      const [{ data: myAttendances }, { data: myFees }] = await Promise.all([
+        supabase
+          .from('attendances')
+          .select('work_minutes, break_minutes, store_id')
+          .eq('user_id', user.id)
+          .gte('work_date', format(startOfMonth(new Date()), 'yyyy-MM-dd'))
+          .lte('work_date', format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+          .not('clock_out', 'is', null),
+        supabase
+          .from('staff_transportation_fees')
+          .select('store_id, fee')
+          .eq('user_id', user.id),
+      ])
 
       if (myAttendances) {
+        const feeByStore = new Map(myFees?.map((f) => [f.store_id, f.fee]) || [])
         setTotalWorkMinutes(myAttendances.reduce((sum: number, a: any) => sum + (a.work_minutes || 0), 0))
-        setShikiDays(myAttendances.filter((a: any) => a.stores?.has_transportation_fee).length)
+        setTransportationTotal(myAttendances.reduce((sum: number, a: any) => sum + (feeByStore.get(a.store_id) || 0), 0))
         setTotalDays(myAttendances.length)
       }
       setLoading(false)

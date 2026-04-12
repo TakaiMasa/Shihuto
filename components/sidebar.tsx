@@ -16,6 +16,7 @@ import {
   Receipt,
   Users,
   Store,
+  Train,
   LogOut,
   Menu,
   X,
@@ -40,12 +41,14 @@ const navItems: NavItem[] = [
   // 勤怠
   { label: '打刻（麺屋 水）', href: '/attendance/sui', icon: <Clock size={20} /> },
   { label: '打刻（MONDAY）', href: '/attendance/monday', icon: <Clock size={20} /> },
+  { label: '打刻（FRIDAY）', href: '/attendance/friday', icon: <Clock size={20} /> },
   { label: '勤怠履歴', href: '/attendance/history', icon: <History size={20} /> },
   { label: '勤怠管理', href: '/attendance/manage', icon: <ClipboardList size={20} />, adminOnly: true },
   // 給与
   { label: '給与確認', href: '/salary/view', icon: <Wallet size={20} />, staffOnly: true },
   { label: '給与管理', href: '/salary/manage', icon: <Receipt size={20} />, adminOnly: true },
   // 設定
+  { label: '交通費設定', href: '/settings/transportation', icon: <Train size={20} /> },
   { label: 'スタッフ管理', href: '/settings/staff', icon: <Users size={20} />, adminOnly: true },
   { label: '店舗設定', href: '/settings/stores', icon: <Store size={20} />, adminOnly: true },
 ]
@@ -75,7 +78,7 @@ export default function Sidebar() {
       {/* ロゴ */}
       <div className="px-6 py-5 border-b border-white/10">
         <h1 className="text-white font-bold text-lg">シフト管理</h1>
-        <p className="text-sidebar-text text-xs mt-1">麵屋 水とRAMEN MONDAY</p>
+        <p className="text-sidebar-text text-xs mt-1">麵屋 水・RAMEN MONDAY・RAMEN FRIDAY</p>
       </div>
 
       {/* ナビゲーション */}

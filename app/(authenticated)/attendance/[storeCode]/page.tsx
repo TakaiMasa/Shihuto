@@ -59,6 +59,7 @@ function getStatusLabel(att: Attendance | null): string {
 const storeNames: Record<string, string> = {
   sui: '麺屋 水',
   monday: 'RAMEN MONDAY',
+  friday: 'RAMEN FRIDAY',
 }
 
 export default function AttendancePage() {

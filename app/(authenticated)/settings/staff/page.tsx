@@ -29,7 +29,6 @@ export default function StaffSettingsPage() {
     name: '',
     role: 'staff' as 'staff' | 'admin',
     hourly_wage: 1000,
-    transportation_fee: '',
   })
 
   // 編集フォーム
@@ -37,7 +36,6 @@ export default function StaffSettingsPage() {
     name: '',
     role: 'staff' as 'staff' | 'admin',
     hourly_wage: 1000,
-    transportation_fee: '',
     is_active: true,
   })
 
@@ -67,7 +65,6 @@ export default function StaffSettingsPage() {
       name: newForm.name,
       role: newForm.role,
       hourly_wage: newForm.hourly_wage,
-      transportation_fee: newForm.transportation_fee ? parseInt(newForm.transportation_fee) : null,
     })
 
     if (result.error) {
@@ -77,7 +74,7 @@ export default function StaffSettingsPage() {
 
     setMessage({ type: 'success', text: 'スタッフを登録しました' })
     setShowAddForm(false)
-    setNewForm({ email: '', password: '', name: '', role: 'staff', hourly_wage: 1000, transportation_fee: '' })
+    setNewForm({ email: '', password: '', name: '', role: 'staff', hourly_wage: 1000 })
     fetchProfiles()
     setTimeout(() => setMessage({ type: '', text: '' }), 3000)
   }
@@ -88,7 +85,6 @@ export default function StaffSettingsPage() {
       name: profile.name,
       role: profile.role,
       hourly_wage: profile.hourly_wage,
-      transportation_fee: profile.transportation_fee?.toString() || '',
       is_active: profile.is_active,
     })
   }
@@ -102,7 +98,6 @@ export default function StaffSettingsPage() {
         name: editForm.name,
         role: editForm.role,
         hourly_wage: editForm.hourly_wage,
-        transportation_fee: editForm.transportation_fee ? parseInt(editForm.transportation_fee) : null,
         is_active: editForm.is_active,
       })
       .eq('id', editingId)
@@ -199,16 +194,6 @@ export default function StaffSettingsPage() {
                 className="w-full px-3 py-2 rounded-lg border border-border text-sm"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">交通費/回（円）</label>
-              <input
-                type="number"
-                value={newForm.transportation_fee}
-                onChange={(e) => setNewForm({ ...newForm, transportation_fee: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg border border-border text-sm"
-                placeholder="麵屋 水のみ"
-              />
-            </div>
 
             <div className="sm:col-span-2 flex justify-end">
               <button
@@ -237,7 +222,6 @@ export default function StaffSettingsPage() {
                   <th className="px-4 py-3 text-left font-medium text-secondary">氏名</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">権限</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">時給</th>
-                  <th className="px-4 py-3 text-center font-medium text-secondary">交通費/回</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">状態</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">操作</th>
                 </tr>
@@ -277,15 +261,6 @@ export default function StaffSettingsPage() {
                             value={editForm.hourly_wage}
                             onChange={(e) => setEditForm({ ...editForm, hourly_wage: parseInt(e.target.value) || 0 })}
                             className="w-20 px-2 py-1 rounded border border-border text-sm text-center"
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="number"
-                            value={editForm.transportation_fee}
-                            onChange={(e) => setEditForm({ ...editForm, transportation_fee: e.target.value })}
-                            className="w-20 px-2 py-1 rounded border border-border text-sm text-center"
-                            placeholder="-"
                           />
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -334,11 +309,6 @@ export default function StaffSettingsPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           {formatCurrency(profile.hourly_wage)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {profile.transportation_fee
-                            ? formatCurrency(profile.transportation_fee)
-                            : '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span

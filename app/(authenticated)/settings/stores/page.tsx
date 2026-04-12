@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { Loader2, Pencil, Check, X, Store as StoreIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import type { Store } from '@/lib/types'
 
 export default function StoreSettingsPage() {
@@ -11,11 +10,7 @@ export default function StoreSettingsPage() {
   const [stores, setStores] = useState<Store[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({
-    name: '',
-    code: '',
-    has_transportation_fee: false,
-  })
+  const [editForm, setEditForm] = useState({ name: '', code: '' })
 
   const fetchStores = useCallback(async () => {
     setLoading(true)
@@ -30,25 +25,15 @@ export default function StoreSettingsPage() {
 
   const startEdit = (store: Store) => {
     setEditingId(store.id)
-    setEditForm({
-      name: store.name,
-      code: store.code,
-      has_transportation_fee: store.has_transportation_fee,
-    })
+    setEditForm({ name: store.name, code: store.code })
   }
 
   const saveEdit = async () => {
     if (!editingId) return
-
     await supabase
       .from('stores')
-      .update({
-        name: editForm.name,
-        code: editForm.code,
-        has_transportation_fee: editForm.has_transportation_fee,
-      })
+      .update({ name: editForm.name, code: editForm.code })
       .eq('id', editingId)
-
     setEditingId(null)
     fetchStores()
   }
@@ -72,9 +57,7 @@ export default function StoreSettingsPage() {
               {editingId === store.id ? (
                 <div className="p-6 space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">
-                      店舗名
-                    </label>
+                    <label className="block text-sm font-medium text-foreground mb-1">店舗名</label>
                     <input
                       type="text"
                       value={editForm.name}
@@ -83,29 +66,13 @@ export default function StoreSettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">
-                      店舗コード
-                    </label>
+                    <label className="block text-sm font-medium text-foreground mb-1">店舗コード</label>
                     <input
                       type="text"
                       value={editForm.code}
                       onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-border text-sm"
                     />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={`fee-${store.id}`}
-                      checked={editForm.has_transportation_fee}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, has_transportation_fee: e.target.checked })
-                      }
-                      className="rounded"
-                    />
-                    <label htmlFor={`fee-${store.id}`} className="text-sm text-foreground">
-                      交通費支給あり
-                    </label>
                   </div>
                   <div className="flex items-center gap-2 pt-2">
                     <button
@@ -151,19 +118,6 @@ export default function StoreSettingsPage() {
                       <span className="text-secondary text-sm">打刻ページURL</span>
                       <span className="font-mono text-xs text-primary">
                         /attendance/{store.code}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-secondary text-sm">交通費支給</span>
-                      <span
-                        className={cn(
-                          'px-2 py-1 rounded-full text-xs font-medium',
-                          store.has_transportation_fee
-                            ? 'bg-green-50 text-green-700'
-                            : 'bg-slate-100 text-slate-600'
-                        )}
-                      >
-                        {store.has_transportation_fee ? 'あり' : 'なし'}
                       </span>
                     </div>
                   </div>

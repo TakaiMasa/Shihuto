@@ -8,7 +8,6 @@ interface CreateStaffInput {
   name: string
   role: 'staff' | 'admin'
   hourly_wage: number
-  transportation_fee: number | null
 }
 
 export async function createStaffUser(input: CreateStaffInput) {
@@ -35,13 +34,10 @@ export async function createStaffUser(input: CreateStaffInput) {
   }
 
   // The handle_new_user trigger creates the profile with name and role.
-  // Update remaining fields (hourly_wage, transportation_fee).
+  // Update remaining fields (hourly_wage).
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
-    .update({
-      hourly_wage: input.hourly_wage,
-      transportation_fee: input.transportation_fee,
-    })
+    .update({ hourly_wage: input.hourly_wage })
     .eq('id', authData.user.id)
 
   if (profileError) {
