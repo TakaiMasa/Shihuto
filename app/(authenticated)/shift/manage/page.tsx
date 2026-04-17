@@ -33,6 +33,7 @@ export default function ShiftManagePage() {
   const [unavailables, setUnavailables] = useState<ShiftUnavailable[]>([])
   const [preferences, setPreferences] = useState<ShiftPreference[]>([])
   const [undecideds, setUndecideds] = useState<{ user_id: string; undecided_date: string; notes: string | null }[]>([])
+  const [submittedUsers, setSubmittedUsers] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
@@ -53,7 +54,8 @@ export default function ShiftManagePage() {
     const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
-    const [profilesRes, storesRes, shiftsRes, unavailableRes, preferencesRes, confirmationsRes, undecidedRes] = await Promise.all([
+    const yearMonth = format(currentMonth, 'yyyy-MM')
+    const [profilesRes, storesRes, shiftsRes, unavailableRes, preferencesRes, confirmationsRes, undecidedRes, submissionsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('is_active', true).order('name'),
       supabase.from('stores').select('*'),
       supabase.from('shifts').select('*').gte('shift_date', start).lte('shift_date', end),
@@ -61,6 +63,7 @@ export default function ShiftManagePage() {
       supabase.from('shift_preferences').select('*').gte('preference_date', start).lte('preference_date', end),
       supabase.from('shift_day_confirmations').select('*').gte('shift_date', start).lte('shift_date', end),
       supabase.from('shift_undecided').select('user_id, undecided_date, notes').gte('undecided_date', start).lte('undecided_date', end),
+      supabase.from('shift_submissions').select('user_id').eq('year_month', yearMonth),
     ])
 
     setProfiles(profilesRes.data || [])
@@ -69,6 +72,10 @@ export default function ShiftManagePage() {
     setUnavailables(unavailableRes.data || [])
     setPreferences(preferencesRes.data || [])
     setUndecideds(undecidedRes.data || [])
+
+    const submittedSet = new Set<string>()
+    submissionsRes.data?.forEach((s: { user_id: string }) => submittedSet.add(s.user_id))
+    setSubmittedUsers(submittedSet)
 
     const confirmedSet = new Set<string>()
     confirmationsRes.data?.forEach((c: { store_id: string; shift_date: string }) => {
@@ -461,6 +468,7 @@ export default function ShiftManagePage() {
                         const pref = preferenceMap.get(key)
                         const isSelected = selectedCell?.userId === profile.id && selectedCell?.dateStr === dateStr
                         const isDayConfirmed = confirmedDates.has(`${selectedStore}-${dateStr}`)
+                        const isSubmitted = submittedUsers.has(profile.id)
 
                         return (
                           <td key={dateStr} className={cn('px-1 py-2 text-center', isDayConfirmed && 'bg-green-50/50')}>
@@ -486,10 +494,14 @@ export default function ShiftManagePage() {
                                   isDayConfirmed
                                     ? hasTime
                                       ? 'bg-green-500 text-white font-medium cursor-default'
-                                      : 'bg-green-50 text-green-400 cursor-default'
+                                      : isSubmitted
+                                        ? 'bg-blue-100 text-blue-500 cursor-default'
+                                        : 'bg-green-50 text-green-400 cursor-default'
                                     : hasTime
                                       ? 'bg-primary text-white font-medium'
-                                      : 'bg-muted text-secondary hover:bg-primary-light hover:text-primary'
+                                      : isSubmitted && !pref
+                                        ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                                        : 'bg-muted text-secondary hover:bg-primary-light hover:text-primary'
                                 )}
                               >
                                 {hasTime ? (
@@ -500,6 +512,8 @@ export default function ShiftManagePage() {
                                       <span className="text-green-600">
                                         希望{formatTimeShort(pref.start_time)}-{formatTimeShort(pref.end_time)}
                                       </span>
+                                    ) : isSubmitted ? (
+                                      <span className="font-medium">基本</span>
                                     ) : (
                                       '---'
                                     )}
@@ -642,6 +656,10 @@ export default function ShiftManagePage() {
             <div className="flex items-center gap-1.5">
               <div className="w-6 h-4 rounded bg-primary" />
               <span>シフト入力済み</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-4 rounded bg-blue-50 border border-blue-200" />
+              <span className="text-blue-600">基本（提出済み・変更なし）</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div className="w-6 h-4 rounded bg-green-500" />

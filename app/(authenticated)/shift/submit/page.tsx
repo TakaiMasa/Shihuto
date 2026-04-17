@@ -254,10 +254,19 @@ export default function ShiftSubmitPage() {
       }
     }
 
+    // 提出記録を保存（エラーがなければ）
+    if (errors.length === 0) {
+      await supabase.from('shift_submissions').upsert({
+        user_id: user.id,
+        year_month: format(currentMonth, 'yyyy-MM'),
+        submitted_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,year_month' })
+    }
+
     if (errors.length > 0) {
-      setMessage({ type: 'error', text: `${errors.join('・')}の保存に失敗しました` })
+      setMessage({ type: 'error', text: `${errors.join('・')}の提出に失敗しました` })
     } else {
-      setMessage({ type: 'success', text: '保存しました' })
+      setMessage({ type: 'success', text: '提出しました' })
       setTimeout(() => setMessage({ type: '', text: '' }), 3000)
     }
     setSaving(false)
@@ -539,7 +548,7 @@ export default function ShiftSubmitPage() {
             ) : (
               <Check size={18} />
             )}
-            {saving ? '保存中...' : '保存する'}
+            {saving ? '提出中...' : '提出する'}
           </button>
         </div>
       </div>
