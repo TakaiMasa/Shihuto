@@ -11,12 +11,14 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { cn, formatCurrency } from '@/lib/utils'
-import type { Profile } from '@/lib/types'
+import type { Profile, Store } from '@/lib/types'
 import { createStaffUser } from '@/app/actions/auth'
 
 export default function StaffSettingsPage() {
   const { supabase } = useAuth()
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [stores, setStores] = useState<Store[]>([])
+  const [wageData, setWageData] = useState<Record<string, Record<string, number>>>({})
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -41,13 +43,25 @@ export default function StaffSettingsPage() {
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('is_active', { ascending: false })
-      .order('name')
+    const [profilesRes, storesRes, wagesRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('*')
+        .order('is_active', { ascending: false })
+        .order('name'),
+      supabase.from('stores').select('*').order('name'),
+      supabase.from('staff_store_hourly_wages').select('user_id, store_id, hourly_wage'),
+    ])
 
-    setProfiles((data || []) as Profile[])
+    const wageMap: Record<string, Record<string, number>> = {}
+    wagesRes.data?.forEach((wage) => {
+      if (!wageMap[wage.user_id]) wageMap[wage.user_id] = {}
+      wageMap[wage.user_id][wage.store_id] = wage.hourly_wage
+    })
+
+    setProfiles((profilesRes.data || []) as Profile[])
+    setStores((storesRes.data || []) as Store[])
+    setWageData(wageMap)
     setLoading(false)
   }, [supabase])
 
@@ -81,6 +95,13 @@ export default function StaffSettingsPage() {
 
   const startEdit = (profile: Profile) => {
     setEditingId(profile.id)
+    const initialWages = { ...(wageData[profile.id] || {}) }
+    stores.forEach((store) => {
+      if (initialWages[store.id] === undefined) {
+        initialWages[store.id] = profile.hourly_wage
+      }
+    })
+    setWageData((prev) => ({ ...prev, [profile.id]: initialWages }))
     setEditForm({
       name: profile.name,
       role: profile.role,
@@ -89,18 +110,49 @@ export default function StaffSettingsPage() {
     })
   }
 
+  const getProfileStoreHourlyWage = (profile: Profile, storeId: string) =>
+    wageData[profile.id]?.[storeId] ?? profile.hourly_wage
+
+  const handleWageChange = (userId: string, storeId: string, value: number) => {
+    setWageData((prev) => ({
+      ...prev,
+      [userId]: { ...(prev[userId] || {}), [storeId]: value },
+    }))
+  }
+
   const saveEdit = async () => {
     if (!editingId) return
+
+    const fallbackHourlyWage = stores[0]
+      ? wageData[editingId]?.[stores[0].id] ?? editForm.hourly_wage
+      : editForm.hourly_wage
 
     await supabase
       .from('profiles')
       .update({
         name: editForm.name,
         role: editForm.role,
-        hourly_wage: editForm.hourly_wage,
+        hourly_wage: fallbackHourlyWage,
         is_active: editForm.is_active,
       })
       .eq('id', editingId)
+
+    if (stores.length > 0) {
+      const upserts = stores.map((store) => ({
+        user_id: editingId,
+        store_id: store.id,
+        hourly_wage: wageData[editingId]?.[store.id] ?? fallbackHourlyWage,
+      }))
+
+      const { error } = await supabase
+        .from('staff_store_hourly_wages')
+        .upsert(upserts, { onConflict: 'user_id,store_id' })
+
+      if (error) {
+        setMessage({ type: 'error', text: `時給の保存に失敗しました: ${error.message}` })
+        return
+      }
+    }
 
     setEditingId(null)
     fetchProfiles()
@@ -185,7 +237,7 @@ export default function StaffSettingsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">時給（円）</label>
+              <label className="block text-sm font-medium text-foreground mb-1">初期時給（全店舗）</label>
               <input
                 type="number"
                 value={newForm.hourly_wage}
@@ -221,7 +273,11 @@ export default function StaffSettingsPage() {
                 <tr className="border-b border-border bg-muted/50">
                   <th className="px-4 py-3 text-left font-medium text-secondary">氏名</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">権限</th>
-                  <th className="px-4 py-3 text-center font-medium text-secondary">時給</th>
+                  {stores.map((store) => (
+                    <th key={store.id} className="px-4 py-3 text-center font-medium text-secondary">
+                      {store.name}
+                    </th>
+                  ))}
                   <th className="px-4 py-3 text-center font-medium text-secondary">状態</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">操作</th>
                 </tr>
@@ -255,14 +311,19 @@ export default function StaffSettingsPage() {
                             <option value="admin">管理者</option>
                           </select>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="number"
-                            value={editForm.hourly_wage}
-                            onChange={(e) => setEditForm({ ...editForm, hourly_wage: parseInt(e.target.value) || 0 })}
-                            className="w-20 px-2 py-1 rounded border border-border text-sm text-center"
-                          />
-                        </td>
+                        {stores.map((store) => (
+                          <td key={store.id} className="px-4 py-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              value={wageData[profile.id]?.[store.id] ?? editForm.hourly_wage}
+                              onChange={(e) =>
+                                handleWageChange(profile.id, store.id, parseInt(e.target.value) || 0)
+                              }
+                              className="w-24 px-2 py-1 rounded border border-border text-sm text-right"
+                            />
+                          </td>
+                        ))}
                         <td className="px-4 py-3 text-center">
                           <label className="flex items-center justify-center gap-1">
                             <input
@@ -307,9 +368,11 @@ export default function StaffSettingsPage() {
                             {profile.role === 'admin' ? '管理者' : 'スタッフ'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          {formatCurrency(profile.hourly_wage)}
-                        </td>
+                        {stores.map((store) => (
+                          <td key={store.id} className="px-4 py-3 text-center">
+                            {formatCurrency(getProfileStoreHourlyWage(profile, store.id))}
+                          </td>
+                        ))}
                         <td className="px-4 py-3 text-center">
                           <span
                             className={cn(

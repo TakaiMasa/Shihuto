@@ -34,7 +34,7 @@ export async function createStaffUser(input: CreateStaffInput) {
   }
 
   // The handle_new_user trigger creates the profile with name and role.
-  // Update remaining fields (hourly_wage).
+  // Update the legacy fallback wage, then initialize all store-specific wages.
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
     .update({ hourly_wage: input.hourly_wage })
@@ -42,6 +42,31 @@ export async function createStaffUser(input: CreateStaffInput) {
 
   if (profileError) {
     return { error: profileError.message }
+  }
+
+  const { data: stores, error: storesError } = await supabaseAdmin
+    .from('stores')
+    .select('id')
+
+  if (storesError) {
+    return { error: storesError.message }
+  }
+
+  if (stores && stores.length > 0) {
+    const { error: wagesError } = await supabaseAdmin
+      .from('staff_store_hourly_wages')
+      .upsert(
+        stores.map((store) => ({
+          user_id: authData.user.id,
+          store_id: store.id,
+          hourly_wage: input.hourly_wage,
+        })),
+        { onConflict: 'user_id,store_id' }
+      )
+
+    if (wagesError) {
+      return { error: wagesError.message }
+    }
   }
 
   return { success: true, userId: authData.user.id }

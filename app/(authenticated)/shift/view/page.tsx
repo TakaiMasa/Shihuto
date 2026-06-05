@@ -17,6 +17,7 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Clock, BarChart2, List, Banknote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Shift, Profile, Store } from '@/lib/types'
+import { getStoreHourlyWage } from '@/lib/wages'
 
 type ShiftWithRelations = Shift & { profiles: Profile; stores: Store }
 
@@ -184,20 +185,35 @@ export default function ShiftViewPage() {
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('chart')
+  const [hourlyWagesByStaffStore, setHourlyWagesByStaffStore] = useState<Record<string, Map<string, number>>>({})
 
   const fetchShifts = useCallback(async () => {
     setLoading(true)
     const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd')
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
-    const { data } = await supabase
-      .from('shifts')
-      .select('*, profiles(name, hourly_wage), stores(name, code)')
-      .gte('shift_date', start)
-      .lte('shift_date', end)
-      .order('shift_date', { ascending: true })
+    const [{ data: shiftsData }, { data: wagesData }] = await Promise.all([
+      supabase
+        .from('shifts')
+        .select('*, profiles(name, hourly_wage), stores(name, code)')
+        .gte('shift_date', start)
+        .lte('shift_date', end)
+        .order('shift_date', { ascending: true }),
+      supabase
+        .from('staff_store_hourly_wages')
+        .select('user_id, store_id, hourly_wage'),
+    ])
 
-    setShifts((data || []) as any)
+    const hourlyWageMap: Record<string, Map<string, number>> = {}
+    wagesData?.forEach((wage) => {
+      if (!hourlyWageMap[wage.user_id]) {
+        hourlyWageMap[wage.user_id] = new Map()
+      }
+      hourlyWageMap[wage.user_id].set(wage.store_id, wage.hourly_wage)
+    })
+
+    setShifts((shiftsData || []) as ShiftWithRelations[])
+    setHourlyWagesByStaffStore(hourlyWageMap)
     setLoading(false)
   }, [currentMonth, supabase])
 
@@ -231,6 +247,13 @@ export default function ShiftViewPage() {
     return a.start_time.localeCompare(b.start_time)
   })
 
+  const getShiftHourlyWage = (shift: ShiftWithRelations) =>
+    getStoreHourlyWage(
+      hourlyWagesByStaffStore[shift.user_id],
+      shift.store_id,
+      shift.profiles?.hourly_wage ?? 0
+    )
+
   // 選択日の合計人件費
   const dailyLaborCost = sortedSelectedShifts.reduce((total, shift) => {
     if (!shift.start_time || !shift.end_time) return total
@@ -239,7 +262,7 @@ export default function ShiftViewPage() {
       work -= timeToMinutes(shift.break_end_time) - timeToMinutes(shift.break_start_time)
     }
     work = Math.max(0, work)
-    const wage = shift.profiles?.hourly_wage ?? 0
+    const wage = getShiftHourlyWage(shift)
     return total + Math.round((work / 60) * wage)
   }, 0)
 

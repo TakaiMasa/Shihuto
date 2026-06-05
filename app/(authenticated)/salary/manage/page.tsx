@@ -18,6 +18,20 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary, Profile } from '@/lib/types'
+import {
+  calculateBaseSalaryByStore,
+  createHourlyWageMap,
+  getStoreHourlyWage,
+} from '@/lib/wages'
+
+type SalaryAttendance = {
+  id: string
+  store_id: string
+  work_date: string
+  work_minutes: number | null
+  break_minutes: number | null
+  stores?: { name: string } | null
+}
 
 export default function SalaryManagePage() {
   const { supabase } = useAuth()
@@ -27,8 +41,9 @@ export default function SalaryManagePage() {
   const [calculating, setCalculating] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
   const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null)
-  const [staffAttendances, setStaffAttendances] = useState<Record<string, any[]>>({})
+  const [staffAttendances, setStaffAttendances] = useState<Record<string, SalaryAttendance[]>>({})
   const [staffFeesByStore, setStaffFeesByStore] = useState<Record<string, Map<string, number>>>({})
+  const [staffWagesByStore, setStaffWagesByStore] = useState<Record<string, Map<string, number>>>({})
   const [loadingDaily, setLoadingDaily] = useState<string | null>(null)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
@@ -38,6 +53,7 @@ export default function SalaryManagePage() {
     setExpandedStaffId(null)
     setStaffAttendances({})
     setStaffFeesByStore({})
+    setStaffWagesByStore({})
   }, [yearMonth])
 
   const fetchSalaries = useCallback(async () => {
@@ -48,7 +64,7 @@ export default function SalaryManagePage() {
       .eq('year_month', yearMonth)
       .order('total_salary', { ascending: false })
 
-    setSalaries((data || []) as any)
+    setSalaries((data || []) as (Salary & { profiles: Profile })[])
     setLoading(false)
   }, [yearMonth, supabase])
 
@@ -72,10 +88,15 @@ export default function SalaryManagePage() {
       return
     }
 
-    // 全スタッフの交通費設定を一括取得
-    const { data: allStaffFees } = await supabase
-      .from('staff_transportation_fees')
-      .select('user_id, store_id, fee')
+    // 全スタッフの店舗別設定を一括取得
+    const [{ data: allStaffFees }, { data: allStaffWages }] = await Promise.all([
+      supabase
+        .from('staff_transportation_fees')
+        .select('user_id, store_id, fee'),
+      supabase
+        .from('staff_store_hourly_wages')
+        .select('user_id, store_id, hourly_wage'),
+    ])
 
     // 各スタッフの勤怠データを取得して給与を計算
     for (const profile of profiles) {
@@ -90,12 +111,15 @@ export default function SalaryManagePage() {
       // このスタッフの店舗別交通費マップ
       const profileFees = allStaffFees?.filter((f) => f.user_id === profile.id) || []
       const feeByStore = new Map(profileFees.map((f) => [f.store_id, f.fee]))
+      const profileWages = allStaffWages?.filter((w) => w.user_id === profile.id) || []
+      const wageByStore = createHourlyWageMap(profileWages)
 
-      const totalWorkMinutes = attendances?.reduce((sum, a) => sum + (a.work_minutes || 0), 0) || 0
-      const totalBreakMinutes = attendances?.reduce((sum, a) => sum + (a.break_minutes || 0), 0) || 0
-      const transportDays = attendances?.filter((a: any) => (feeByStore.get(a.store_id) || 0) > 0).length || 0
-      const transportationTotal = attendances?.reduce((sum: number, a: any) => sum + (feeByStore.get(a.store_id) || 0), 0) || 0
-      const baseSalary = Math.floor(totalWorkMinutes / 60 * profile.hourly_wage)
+      const attendanceRows = (attendances || []) as SalaryAttendance[]
+      const totalWorkMinutes = attendanceRows.reduce((sum, a) => sum + (a.work_minutes || 0), 0)
+      const totalBreakMinutes = attendanceRows.reduce((sum, a) => sum + (a.break_minutes || 0), 0)
+      const transportDays = attendanceRows.filter((a) => (feeByStore.get(a.store_id) || 0) > 0).length
+      const transportationTotal = attendanceRows.reduce((sum, a) => sum + (feeByStore.get(a.store_id) || 0), 0)
+      const baseSalary = calculateBaseSalaryByStore(attendanceRows, wageByStore, profile.hourly_wage)
       const totalSalary = baseSalary + transportationTotal
 
       // UPSERT
@@ -161,7 +185,7 @@ export default function SalaryManagePage() {
 
     if (!staffAttendances[userId]) {
       setLoadingDaily(userId)
-      const [{ data: attendances }, { data: fees }] = await Promise.all([
+      const [{ data: attendances }, { data: fees }, { data: wages }] = await Promise.all([
         supabase
           .from('attendances')
           .select('*, stores(name)')
@@ -174,12 +198,23 @@ export default function SalaryManagePage() {
           .from('staff_transportation_fees')
           .select('store_id, fee')
           .eq('user_id', userId),
+        supabase
+          .from('staff_store_hourly_wages')
+          .select('store_id, hourly_wage')
+          .eq('user_id', userId),
       ])
 
-      setStaffAttendances((prev) => ({ ...prev, [userId]: attendances || [] }))
+      setStaffAttendances((prev) => ({
+        ...prev,
+        [userId]: (attendances || []) as SalaryAttendance[],
+      }))
       setStaffFeesByStore((prev) => ({
         ...prev,
         [userId]: new Map(fees?.map((f) => [f.store_id, f.fee]) || []),
+      }))
+      setStaffWagesByStore((prev) => ({
+        ...prev,
+        [userId]: createHourlyWageMap(wages),
       }))
       setLoadingDaily(null)
     }
@@ -205,7 +240,7 @@ export default function SalaryManagePage() {
     const items = [
       ['Total Work Time', formatMinutesToHours(salary.total_work_minutes)],
       ['Total Break Time', formatMinutesToHours(salary.total_break_minutes)],
-      ['Hourly Wage', `${salary.hourly_wage} JPY`],
+      ['Hourly Wage', 'By store'],
       ['Base Salary', `${salary.base_salary} JPY`],
       ['Transportation Days', `${salary.work_days_shiki} days`],
       ['Transportation Fee/Day', `${salary.transportation_fee_per_day} JPY`],
@@ -320,7 +355,7 @@ export default function SalaryManagePage() {
                 <tr className="border-b border-border bg-muted/50">
                   <th className="px-4 py-3 text-left font-medium text-secondary">スタッフ</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">勤務時間</th>
-                  <th className="px-4 py-3 text-center font-medium text-secondary">時給</th>
+                  <th className="px-4 py-3 text-center font-medium text-secondary">時給設定</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">基本給</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">交通費日数</th>
                   <th className="px-4 py-3 text-center font-medium text-secondary">交通費</th>
@@ -340,7 +375,7 @@ export default function SalaryManagePage() {
                         {formatMinutesToHours(salary.total_work_minutes)}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {formatCurrency(salary.hourly_wage)}
+                        <span className="text-xs text-secondary">店舗別</span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {formatCurrency(salary.base_salary)}
@@ -426,6 +461,7 @@ export default function SalaryManagePage() {
                                   <th className="px-3 py-2 text-left font-medium text-secondary">日付</th>
                                   <th className="px-3 py-2 text-center font-medium text-secondary">店舗</th>
                                   <th className="px-3 py-2 text-center font-medium text-secondary">勤務時間</th>
+                                  <th className="px-3 py-2 text-center font-medium text-secondary">時給</th>
                                   <th className="px-3 py-2 text-center font-medium text-secondary">日給</th>
                                   <th className="px-3 py-2 text-center font-medium text-secondary">交通費</th>
                                   <th className="px-3 py-2 text-center font-medium text-secondary">日計</th>
@@ -433,8 +469,14 @@ export default function SalaryManagePage() {
                               </thead>
                               <tbody>
                                 {staffAttendances[salary.user_id].map((att) => {
+                                  const wageMap = staffWagesByStore[salary.user_id]
+                                  const dailyWage = getStoreHourlyWage(
+                                    wageMap,
+                                    att.store_id,
+                                    salary.hourly_wage
+                                  )
                                   const dailyBase = Math.floor(
-                                    (att.work_minutes || 0) / 60 * salary.hourly_wage
+                                    (att.work_minutes || 0) / 60 * dailyWage
                                   )
                                   const feeMap = staffFeesByStore[salary.user_id]
                                   const dailyTransport = feeMap?.get(att.store_id) || 0
@@ -449,6 +491,9 @@ export default function SalaryManagePage() {
                                       </td>
                                       <td className="px-3 py-2 text-center">
                                         {formatMinutesToHours(att.work_minutes || 0)}
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        {formatCurrency(dailyWage)}
                                       </td>
                                       <td className="px-3 py-2 text-center">
                                         {formatCurrency(dailyBase)}

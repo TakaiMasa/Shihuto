@@ -90,6 +90,15 @@ export interface StaffTransportationFee {
   updated_at: string
 }
 
+export interface StaffStoreHourlyWage {
+  id: string
+  user_id: string
+  store_id: string
+  hourly_wage: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Salary {
   id: string
   user_id: string

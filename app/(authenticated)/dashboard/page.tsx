@@ -4,6 +4,7 @@ import { useAuth } from '@/components/auth-provider'
 import { useEffect, useState } from 'react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { formatCurrency, formatMinutesToHours, getCurrentYearMonth } from '@/lib/utils'
+import { calculateBaseSalaryByStore, createHourlyWageMap } from '@/lib/wages'
 import {
   Clock,
   Calendar,
@@ -15,8 +16,27 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 
+type MonthlyAttendance = {
+  store_id: string
+  work_minutes: number | null
+}
+
+type TodayAttendance = {
+  id: string
+  clock_in: string | null
+  clock_out: string | null
+  break_start?: string | null
+  break_end?: string | null
+  profiles?: { name?: string | null } | null
+  stores?: { name?: string | null } | null
+}
+
+type AdminMonthAttendance = {
+  work_minutes: number | null
+}
+
 export default function DashboardPage() {
-  const { profile, supabase, user } = useAuth()
+  const { profile } = useAuth()
   const isAdmin = profile.role === 'admin'
 
   if (isAdmin) {
@@ -30,15 +50,14 @@ function StaffDashboard() {
   const { profile, supabase, user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [totalWorkMinutes, setTotalWorkMinutes] = useState(0)
-  const [transportationTotal, setTransportationTotal] = useState(0)
   const [totalDays, setTotalDays] = useState(0)
+  const [estimatedSalary, setEstimatedSalary] = useState(0)
 
   const currentYearMonth = getCurrentYearMonth()
-  const estimatedSalary = Math.floor(totalWorkMinutes / 60 * profile.hourly_wage) + transportationTotal
 
   useEffect(() => {
     const fetchData = async () => {
-      const [{ data: myAttendances }, { data: myFees }] = await Promise.all([
+      const [{ data: myAttendances }, { data: myFees }, { data: myWages }] = await Promise.all([
         supabase
           .from('attendances')
           .select('work_minutes, break_minutes, store_id')
@@ -50,18 +69,30 @@ function StaffDashboard() {
           .from('staff_transportation_fees')
           .select('store_id, fee')
           .eq('user_id', user.id),
+        supabase
+          .from('staff_store_hourly_wages')
+          .select('store_id, hourly_wage')
+          .eq('user_id', user.id),
       ])
 
       if (myAttendances) {
+        const attendanceRows = myAttendances as MonthlyAttendance[]
         const feeByStore = new Map(myFees?.map((f) => [f.store_id, f.fee]) || [])
-        setTotalWorkMinutes(myAttendances.reduce((sum: number, a: any) => sum + (a.work_minutes || 0), 0))
-        setTransportationTotal(myAttendances.reduce((sum: number, a: any) => sum + (feeByStore.get(a.store_id) || 0), 0))
-        setTotalDays(myAttendances.length)
+        const wageByStore = createHourlyWageMap(myWages)
+        const baseSalary = calculateBaseSalaryByStore(
+          attendanceRows,
+          wageByStore,
+          profile.hourly_wage
+        )
+        const transportTotal = attendanceRows.reduce((sum, a) => sum + (feeByStore.get(a.store_id) || 0), 0)
+        setTotalWorkMinutes(attendanceRows.reduce((sum, a) => sum + (a.work_minutes || 0), 0))
+        setEstimatedSalary(baseSalary + transportTotal)
+        setTotalDays(attendanceRows.length)
       }
       setLoading(false)
     }
     fetchData()
-  }, [supabase, user.id, currentYearMonth])
+  }, [supabase, user.id, currentYearMonth, profile.hourly_wage])
 
   if (loading) {
     return (
@@ -159,9 +190,9 @@ function StaffDashboard() {
 }
 
 function AdminDashboard() {
-  const { profile, supabase } = useAuth()
+  const { supabase } = useAuth()
   const [loading, setLoading] = useState(true)
-  const [todayAttendances, setTodayAttendances] = useState<any[]>([])
+  const [todayAttendances, setTodayAttendances] = useState<TodayAttendance[]>([])
   const [staffCount, setStaffCount] = useState(0)
   const [totalWorkMinutes, setTotalWorkMinutes] = useState(0)
 
@@ -188,10 +219,13 @@ function AdminDashboard() {
           .not('clock_out', 'is', null),
       ])
 
-      setTodayAttendances(todayAttRes.data || [])
+      setTodayAttendances((todayAttRes.data || []) as TodayAttendance[])
       setStaffCount(staffCountRes.count || 0)
       setTotalWorkMinutes(
-        (monthAttRes.data || []).reduce((sum: number, a: any) => sum + (a.work_minutes || 0), 0)
+        ((monthAttRes.data || []) as AdminMonthAttendance[]).reduce(
+          (sum, a) => sum + (a.work_minutes || 0),
+          0
+        )
       )
       setLoading(false)
     }
@@ -225,7 +259,7 @@ function AdminDashboard() {
             <span className="text-sm text-secondary">本日の出勤者</span>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {todayAttendances.filter((a: any) => a.clock_in && !a.clock_out).length}名
+            {todayAttendances.filter((a) => a.clock_in && !a.clock_out).length}名
           </p>
         </div>
 
@@ -254,7 +288,7 @@ function AdminDashboard() {
         <div className="p-6">
           {todayAttendances.length > 0 ? (
             <div className="space-y-3">
-              {todayAttendances.map((att: any) => (
+              {todayAttendances.map((att) => (
                 <div key={att.id} className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-primary-light text-primary flex items-center justify-center text-sm font-bold">

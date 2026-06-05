@@ -84,6 +84,17 @@ CREATE TABLE staff_transportation_fees (
   UNIQUE (user_id, store_id)
 );
 
+-- staff_store_hourly_wages（スタッフ別・店舗別時給）
+CREATE TABLE staff_store_hourly_wages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  store_id uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  hourly_wage integer NOT NULL DEFAULT 1000 CHECK (hourly_wage >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, store_id)
+);
+
 -- salaries（給与）
 CREATE TABLE salaries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,6 +129,8 @@ CREATE INDEX attendances_user_id_idx ON attendances(user_id);
 CREATE INDEX attendances_store_id_idx ON attendances(store_id);
 CREATE INDEX salaries_year_month_idx ON salaries(year_month);
 CREATE INDEX salaries_user_id_idx ON salaries(user_id);
+CREATE INDEX staff_store_hourly_wages_user_id_idx ON staff_store_hourly_wages(user_id);
+CREATE INDEX staff_store_hourly_wages_store_id_idx ON staff_store_hourly_wages(store_id);
 
 
 -- ========================================
@@ -161,6 +174,7 @@ ALTER TABLE shift_unavailable ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE salaries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff_store_hourly_wages ENABLE ROW LEVEL SECURITY;
 
 -- stores: 全員閲覧可、管理者は編集可
 CREATE POLICY "Everyone can view stores" ON stores FOR SELECT USING (true);
@@ -210,6 +224,14 @@ CREATE POLICY "Users can manage own transportation fees" ON staff_transportation
   USING (auth.uid() = user_id);
 CREATE POLICY "Admins can manage all transportation fees" ON staff_transportation_fees FOR ALL
   USING (public.is_admin());
+
+-- staff_store_hourly_wages: スタッフは自分の時給のみ参照可、管理者は全件編集可
+CREATE POLICY "Users can view own store hourly wages" ON staff_store_hourly_wages FOR SELECT
+  USING (auth.uid() = user_id);
+CREATE POLICY "Admins can manage all store hourly wages" ON staff_store_hourly_wages FOR ALL
+  USING (public.is_admin());
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.staff_store_hourly_wages TO authenticated;
 
 
 -- ========================================
@@ -264,6 +286,10 @@ CREATE TRIGGER update_shifts_updated_at
 
 CREATE TRIGGER update_salaries_updated_at
   BEFORE UPDATE ON salaries
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER update_staff_store_hourly_wages_updated_at
+  BEFORE UPDATE ON staff_store_hourly_wages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- 6.3 プロフィール取得・自動作成関数（RLSバイパス）

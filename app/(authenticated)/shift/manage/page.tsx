@@ -14,6 +14,7 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote, Lock, LockOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Store, Shift, ShiftUnavailable, ShiftPreference } from '@/lib/types'
+import { getStoreHourlyWage } from '@/lib/wages'
 
 interface ShiftEntry {
   storeId: string
@@ -33,6 +34,7 @@ export default function ShiftManagePage() {
   const [unavailables, setUnavailables] = useState<ShiftUnavailable[]>([])
   const [preferences, setPreferences] = useState<ShiftPreference[]>([])
   const [undecideds, setUndecideds] = useState<{ user_id: string; undecided_date: string; notes: string | null }[]>([])
+  const [hourlyWagesByStaffStore, setHourlyWagesByStaffStore] = useState<Record<string, Map<string, number>>>({})
   const [submittedUsers, setSubmittedUsers] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -55,9 +57,10 @@ export default function ShiftManagePage() {
     const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd')
 
     const yearMonth = format(currentMonth, 'yyyy-MM')
-    const [profilesRes, storesRes, shiftsRes, unavailableRes, preferencesRes, confirmationsRes, undecidedRes, submissionsRes] = await Promise.all([
+    const [profilesRes, storesRes, wagesRes, shiftsRes, unavailableRes, preferencesRes, confirmationsRes, undecidedRes, submissionsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('is_active', true).order('name'),
       supabase.from('stores').select('*'),
+      supabase.from('staff_store_hourly_wages').select('user_id, store_id, hourly_wage'),
       supabase.from('shifts').select('*').gte('shift_date', start).lte('shift_date', end),
       supabase.from('shift_unavailable').select('*').gte('unavailable_date', start).lte('unavailable_date', end),
       supabase.from('shift_preferences').select('*').gte('preference_date', start).lte('preference_date', end),
@@ -72,6 +75,15 @@ export default function ShiftManagePage() {
     setUnavailables(unavailableRes.data || [])
     setPreferences(preferencesRes.data || [])
     setUndecideds(undecidedRes.data || [])
+
+    const hourlyWageMap: Record<string, Map<string, number>> = {}
+    wagesRes.data?.forEach((wage) => {
+      if (!hourlyWageMap[wage.user_id]) {
+        hourlyWageMap[wage.user_id] = new Map()
+      }
+      hourlyWageMap[wage.user_id].set(wage.store_id, wage.hourly_wage)
+    })
+    setHourlyWagesByStaffStore(hourlyWageMap)
 
     const submittedSet = new Set<string>()
     submissionsRes.data?.forEach((s: { user_id: string }) => submittedSet.add(s.user_id))
@@ -302,6 +314,8 @@ export default function ShiftManagePage() {
   const selectedEntry = selectedKey ? editingShifts.get(selectedKey) : undefined
   const selectedPref = selectedKey ? preferenceMap.get(selectedKey) : undefined
   const selectedProfile = selectedCell ? profiles.find((p) => p.id === selectedCell.userId) : undefined
+  const getProfileHourlyWage = (profile: Profile, storeId: string) =>
+    getStoreHourlyWage(hourlyWagesByStaffStore[profile.id], storeId, profile.hourly_wage)
 
   // 人件費計算ヘルパー（分単位の実働時間を返す）
   const calcWorkMinutes = (entry: ShiftEntry): number => {
@@ -319,8 +333,11 @@ export default function ShiftManagePage() {
 
   // 選択スタッフの個人人件費
   const selectedWorkMinutes = selectedEntry ? calcWorkMinutes(selectedEntry) : 0
+  const selectedHourlyWage = selectedProfile && selectedEntry
+    ? getProfileHourlyWage(selectedProfile, selectedEntry.storeId)
+    : 0
   const selectedLaborCost = selectedProfile
-    ? Math.round((selectedWorkMinutes / 60) * selectedProfile.hourly_wage)
+    ? Math.round((selectedWorkMinutes / 60) * selectedHourlyWage)
     : 0
 
   // 選択日の合計人件費（全スタッフ分）
@@ -334,7 +351,7 @@ export default function ShiftManagePage() {
           const profile = profiles.find((p) => p.id === uid)
           if (!profile) return
           const mins = calcWorkMinutes(entry)
-          total += Math.round((mins / 60) * profile.hourly_wage)
+          total += Math.round((mins / 60) * getProfileHourlyWage(profile, entry.storeId))
         })
         return total
       })()
@@ -555,7 +572,7 @@ export default function ShiftManagePage() {
                   <span>
                     {selectedProfile?.name}の予定: <span className="font-semibold">¥{selectedLaborCost.toLocaleString()}</span>
                     <span className="text-blue-500 ml-1">
-                      ({Math.floor(selectedWorkMinutes / 60)}h{selectedWorkMinutes % 60 > 0 ? `${selectedWorkMinutes % 60}m` : ''} × ¥{selectedProfile?.hourly_wage.toLocaleString()})
+                      ({Math.floor(selectedWorkMinutes / 60)}h{selectedWorkMinutes % 60 > 0 ? `${selectedWorkMinutes % 60}m` : ''} × ¥{selectedHourlyWage.toLocaleString()})
                     </span>
                   </span>
                 </div>

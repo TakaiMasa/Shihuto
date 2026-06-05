@@ -7,13 +7,30 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Wallet } from 'lucide-react'
 import { formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary } from '@/lib/types'
+import { createHourlyWageMap, getStoreHourlyWage } from '@/lib/wages'
+
+type AttendanceWithStore = {
+  id: string
+  store_id: string
+  work_date: string
+  work_minutes: number | null
+  stores?: { name: string } | null
+}
+
+type StoreHourlyWageWithStore = {
+  store_id: string
+  hourly_wage: number
+  stores?: { name: string } | null
+}
 
 export default function SalaryViewPage() {
   const { user, supabase } = useAuth()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [salary, setSalary] = useState<Salary | null>(null)
-  const [attendances, setAttendances] = useState<any[]>([])
+  const [attendances, setAttendances] = useState<AttendanceWithStore[]>([])
   const [feeByStore, setFeeByStore] = useState<Map<string, number>>(new Map())
+  const [wageByStore, setWageByStore] = useState<Map<string, number>>(new Map())
+  const [storeHourlyWages, setStoreHourlyWages] = useState<StoreHourlyWageWithStore[]>([])
   const [loading, setLoading] = useState(true)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
@@ -21,7 +38,7 @@ export default function SalaryViewPage() {
   const fetchSalary = useCallback(async () => {
     setLoading(true)
 
-    const [{ data: salaryData }, { data: attendanceData }, { data: feesData }] = await Promise.all([
+    const [{ data: salaryData }, { data: attendanceData }, { data: feesData }, { data: wagesData }] = await Promise.all([
       supabase
         .from('salaries')
         .select('*')
@@ -40,11 +57,26 @@ export default function SalaryViewPage() {
         .from('staff_transportation_fees')
         .select('store_id, fee')
         .eq('user_id', user.id),
+      supabase
+        .from('staff_store_hourly_wages')
+        .select('store_id, hourly_wage, stores(name)')
+        .eq('user_id', user.id),
     ])
 
+    const wageRows = (wagesData || []).map((wage) => {
+      const store = Array.isArray(wage.stores) ? wage.stores[0] : wage.stores
+      return {
+        store_id: wage.store_id,
+        hourly_wage: wage.hourly_wage,
+        stores: store ?? null,
+      } as StoreHourlyWageWithStore
+    })
+
     setSalary(salaryData as Salary | null)
-    setAttendances(attendanceData || [])
+    setAttendances((attendanceData || []) as AttendanceWithStore[])
     setFeeByStore(new Map(feesData?.map((f) => [f.store_id, f.fee]) || []))
+    setWageByStore(createHourlyWageMap(wageRows))
+    setStoreHourlyWages(wageRows)
     setLoading(false)
   }, [yearMonth, supabase, user.id])
 
@@ -115,11 +147,24 @@ export default function SalaryViewPage() {
                   {formatMinutesToHours(salary.total_break_minutes)}
                 </span>
               </div>
-              <div className="flex justify-between items-center py-2 border-b border-border">
-                <span className="text-secondary">時給</span>
-                <span className="font-medium text-foreground">
-                  {formatCurrency(salary.hourly_wage)}
-                </span>
+              <div className="flex justify-between items-start gap-4 py-2 border-b border-border">
+                <span className="text-secondary">店舗別時給</span>
+                <div className="text-right space-y-1">
+                  {storeHourlyWages.length > 0 ? (
+                    storeHourlyWages.map((wage) => (
+                      <div key={wage.store_id} className="text-sm font-medium text-foreground">
+                        <span className="text-secondary font-normal mr-2">
+                          {wage.stores?.name || '店舗'}
+                        </span>
+                        {formatCurrency(wage.hourly_wage)}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="font-medium text-foreground">
+                      {formatCurrency(salary.hourly_wage)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-border">
                 <span className="text-secondary">基本給</span>
@@ -154,8 +199,9 @@ export default function SalaryViewPage() {
               </div>
               <div className="divide-y divide-border">
                 {attendances.map((att) => {
+                  const dailyWage = getStoreHourlyWage(wageByStore, att.store_id, salary.hourly_wage)
                   const dailyBase = Math.floor(
-                    (att.work_minutes || 0) / 60 * salary.hourly_wage
+                    (att.work_minutes || 0) / 60 * dailyWage
                   )
                   const dailyTransport = feeByStore.get(att.store_id) || 0
                   const dailyTotal = dailyBase + dailyTransport
@@ -167,6 +213,9 @@ export default function SalaryViewPage() {
                         </p>
                         <p className="text-xs text-secondary mt-0.5">
                           {att.stores?.name || '-'} · {formatMinutesToHours(att.work_minutes || 0)}
+                        </p>
+                        <p className="text-xs text-secondary mt-0.5">
+                          {formatCurrency(dailyWage)} / 時
                         </p>
                       </div>
                       <div className="text-right">

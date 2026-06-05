@@ -3,6 +3,13 @@ import { isAuthorizedAccountingRequest } from '@/lib/api/accounting-auth'
 import { isDateString } from '@/lib/api/accounting-validators'
 import { createServiceClient } from '@/lib/supabase/service'
 
+type AttendanceAccountingRow = {
+  user_id: string
+  store_id: string
+  work_minutes: number | null
+  profiles?: { hourly_wage?: number | null } | null
+}
+
 export async function GET(request: NextRequest) {
   try {
     if (!isAuthorizedAccountingRequest(request)) {
@@ -53,7 +60,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const totalWorkMinutes = data.reduce((sum, row) => sum + (row.work_minutes || 0), 0)
+    const { data: wages, error: wagesError } = await supabase
+      .from('staff_store_hourly_wages')
+      .select('user_id,store_id,hourly_wage')
+
+    if (wagesError) {
+      return NextResponse.json(
+        { error: 'Failed to load hourly wages', detail: wagesError.message },
+        { status: 500 }
+      )
+    }
+
+    const rows = (data || []) as AttendanceAccountingRow[]
+    const wageByStaffStore = new Map(
+      (wages || []).map((wage) => [`${wage.user_id}:${wage.store_id}`, wage.hourly_wage])
+    )
+    const items = rows.map((row) => ({
+      ...row,
+      effective_hourly_wage:
+        wageByStaffStore.get(`${row.user_id}:${row.store_id}`) ?? row.profiles?.hourly_wage ?? 0,
+    }))
+    const totalWorkMinutes = rows.reduce((sum, row) => sum + (row.work_minutes || 0), 0)
 
     return NextResponse.json({
       from,
@@ -61,8 +88,8 @@ export async function GET(request: NextRequest) {
       date,
       storeId,
       totalWorkMinutes,
-      count: data.length,
-      items: data,
+      count: items.length,
+      items,
     })
   } catch (error) {
     return NextResponse.json(
