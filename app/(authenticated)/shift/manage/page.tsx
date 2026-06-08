@@ -14,7 +14,7 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote, Lock, LockOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Store, Shift, ShiftUnavailable, ShiftPreference } from '@/lib/types'
-import { getStoreHourlyWage } from '@/lib/wages'
+import { calculateShiftPay, getStoreHourlyWage } from '@/lib/wages'
 
 interface ShiftEntry {
   storeId: string
@@ -317,28 +317,24 @@ export default function ShiftManagePage() {
   const getProfileHourlyWage = (profile: Profile, storeId: string) =>
     getStoreHourlyWage(hourlyWagesByStaffStore[profile.id], storeId, profile.hourly_wage)
 
-  // 人件費計算ヘルパー（分単位の実働時間を返す）
-  const calcWorkMinutes = (entry: ShiftEntry): number => {
-    if (!entry.startTime || !entry.endTime) return 0
-    const toMin = (t: string) => {
-      const [h, m] = t.split(':').map(Number)
-      return h * 60 + m
-    }
-    let work = toMin(entry.endTime) - toMin(entry.startTime)
-    if (entry.breakStartTime && entry.breakEndTime) {
-      work -= toMin(entry.breakEndTime) - toMin(entry.breakStartTime)
-    }
-    return Math.max(0, work)
-  }
-
   // 選択スタッフの個人人件費
-  const selectedWorkMinutes = selectedEntry ? calcWorkMinutes(selectedEntry) : 0
   const selectedHourlyWage = selectedProfile && selectedEntry
     ? getProfileHourlyWage(selectedProfile, selectedEntry.storeId)
     : 0
-  const selectedLaborCost = selectedProfile
-    ? Math.round((selectedWorkMinutes / 60) * selectedHourlyWage)
-    : 0
+  const selectedPay = selectedEntry && selectedCell
+    ? calculateShiftPay(
+        {
+          shiftDate: selectedCell.dateStr,
+          startTime: selectedEntry.startTime,
+          endTime: selectedEntry.endTime,
+          breakStartTime: selectedEntry.breakStartTime,
+          breakEndTime: selectedEntry.breakEndTime,
+        },
+        selectedHourlyWage
+      )
+    : { regularMinutes: 0, lateNightMinutes: 0, totalMinutes: 0, totalAmount: 0 }
+  const selectedWorkMinutes = selectedPay.totalMinutes
+  const selectedLaborCost = selectedProfile ? selectedPay.totalAmount : 0
 
   // 選択日の合計人件費（全スタッフ分）
   const dailyLaborCost = selectedCell
@@ -350,8 +346,17 @@ export default function ShiftManagePage() {
           const uid = key.substring(0, 36)
           const profile = profiles.find((p) => p.id === uid)
           if (!profile) return
-          const mins = calcWorkMinutes(entry)
-          total += Math.round((mins / 60) * getProfileHourlyWage(profile, entry.storeId))
+          const wage = getProfileHourlyWage(profile, entry.storeId)
+          total += calculateShiftPay(
+            {
+              shiftDate: selectedCell.dateStr,
+              startTime: entry.startTime,
+              endTime: entry.endTime,
+              breakStartTime: entry.breakStartTime,
+              breakEndTime: entry.breakEndTime,
+            },
+            wage
+          ).totalAmount
         })
         return total
       })()
@@ -574,6 +579,11 @@ export default function ShiftManagePage() {
                     <span className="text-blue-500 ml-1">
                       ({Math.floor(selectedWorkMinutes / 60)}h{selectedWorkMinutes % 60 > 0 ? `${selectedWorkMinutes % 60}m` : ''} × ¥{selectedHourlyWage.toLocaleString()})
                     </span>
+                    {selectedPay.lateNightMinutes > 0 && (
+                      <span className="text-blue-500 ml-1">
+                        深夜{Math.floor(selectedPay.lateNightMinutes / 60)}h{selectedPay.lateNightMinutes % 60 > 0 ? `${selectedPay.lateNightMinutes % 60}m` : ''}×1.25
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-xs text-orange-700">

@@ -17,7 +17,7 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Clock, BarChart2, List, Banknote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Shift, Profile, Store } from '@/lib/types'
-import { getStoreHourlyWage } from '@/lib/wages'
+import { calculateShiftPay, getStoreHourlyWage } from '@/lib/wages'
 
 type ShiftWithRelations = Shift & { profiles: Profile; stores: Store }
 
@@ -256,14 +256,17 @@ export default function ShiftViewPage() {
 
   // 選択日の合計人件費
   const dailyLaborCost = sortedSelectedShifts.reduce((total, shift) => {
-    if (!shift.start_time || !shift.end_time) return total
-    let work = timeToMinutes(shift.end_time) - timeToMinutes(shift.start_time)
-    if (shift.break_start_time && shift.break_end_time) {
-      work -= timeToMinutes(shift.break_end_time) - timeToMinutes(shift.break_start_time)
-    }
-    work = Math.max(0, work)
     const wage = getShiftHourlyWage(shift)
-    return total + Math.round((work / 60) * wage)
+    return total + calculateShiftPay(
+      {
+        shiftDate: shift.shift_date,
+        startTime: shift.start_time,
+        endTime: shift.end_time,
+        breakStartTime: shift.break_start_time,
+        breakEndTime: shift.break_end_time,
+      },
+      wage
+    ).totalAmount
   }, 0)
 
   return (

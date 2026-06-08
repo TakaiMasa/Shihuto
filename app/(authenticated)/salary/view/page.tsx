@@ -7,13 +7,21 @@ import { ja } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, Loader2, Wallet } from 'lucide-react'
 import { formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary } from '@/lib/types'
-import { createHourlyWageMap, getStoreHourlyWage } from '@/lib/wages'
+import { calculateAttendancePay, createHourlyWageMap, getStoreHourlyWage } from '@/lib/wages'
 
 type AttendanceWithStore = {
   id: string
   store_id: string
   work_date: string
   work_minutes: number | null
+  clock_in: string | null
+  clock_out: string | null
+  break1_start: string | null
+  break1_end: string | null
+  break2_start: string | null
+  break2_end: string | null
+  break3_start: string | null
+  break3_end: string | null
   stores?: { name: string } | null
 }
 
@@ -200,9 +208,8 @@ export default function SalaryViewPage() {
               <div className="divide-y divide-border">
                 {attendances.map((att) => {
                   const dailyWage = getStoreHourlyWage(wageByStore, att.store_id, salary.hourly_wage)
-                  const dailyBase = Math.floor(
-                    (att.work_minutes || 0) / 60 * dailyWage
-                  )
+                  const dailyPay = calculateAttendancePay(att, dailyWage)
+                  const dailyBase = dailyPay.totalAmount
                   const dailyTransport = feeByStore.get(att.store_id) || 0
                   const dailyTotal = dailyBase + dailyTransport
                   return (
@@ -214,6 +221,11 @@ export default function SalaryViewPage() {
                         <p className="text-xs text-secondary mt-0.5">
                           {att.stores?.name || '-'} · {formatMinutesToHours(att.work_minutes || 0)}
                         </p>
+                        {dailyPay.lateNightMinutes > 0 && (
+                          <p className="text-xs text-secondary mt-0.5">
+                            深夜 {formatMinutesToHours(dailyPay.lateNightMinutes)} × 1.25
+                          </p>
+                        )}
                         <p className="text-xs text-secondary mt-0.5">
                           {formatCurrency(dailyWage)} / 時
                         </p>

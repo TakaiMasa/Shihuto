@@ -19,6 +19,14 @@ import Link from 'next/link'
 type MonthlyAttendance = {
   store_id: string
   work_minutes: number | null
+  clock_in: string | null
+  clock_out: string | null
+  break1_start: string | null
+  break1_end: string | null
+  break2_start: string | null
+  break2_end: string | null
+  break3_start: string | null
+  break3_end: string | null
 }
 
 type TodayAttendance = {
@@ -60,7 +68,7 @@ function StaffDashboard() {
       const [{ data: myAttendances }, { data: myFees }, { data: myWages }] = await Promise.all([
         supabase
           .from('attendances')
-          .select('work_minutes, break_minutes, store_id')
+          .select('work_minutes, break_minutes, store_id, clock_in, clock_out, break1_start, break1_end, break2_start, break2_end, break3_start, break3_end')
           .eq('user_id', user.id)
           .gte('work_date', format(startOfMonth(new Date()), 'yyyy-MM-dd'))
           .lte('work_date', format(endOfMonth(new Date()), 'yyyy-MM-dd'))

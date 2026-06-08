@@ -19,6 +19,7 @@ import {
 import { cn, formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary, Profile } from '@/lib/types'
 import {
+  calculateAttendancePay,
   calculateBaseSalaryByStore,
   createHourlyWageMap,
   getStoreHourlyWage,
@@ -30,6 +31,14 @@ type SalaryAttendance = {
   work_date: string
   work_minutes: number | null
   break_minutes: number | null
+  clock_in: string | null
+  clock_out: string | null
+  break1_start: string | null
+  break1_end: string | null
+  break2_start: string | null
+  break2_end: string | null
+  break3_start: string | null
+  break3_end: string | null
   stores?: { name: string } | null
 }
 
@@ -475,9 +484,8 @@ export default function SalaryManagePage() {
                                     att.store_id,
                                     salary.hourly_wage
                                   )
-                                  const dailyBase = Math.floor(
-                                    (att.work_minutes || 0) / 60 * dailyWage
-                                  )
+                                  const dailyPay = calculateAttendancePay(att, dailyWage)
+                                  const dailyBase = dailyPay.totalAmount
                                   const feeMap = staffFeesByStore[salary.user_id]
                                   const dailyTransport = feeMap?.get(att.store_id) || 0
                                   const dailyTotal = dailyBase + dailyTransport
@@ -490,7 +498,12 @@ export default function SalaryManagePage() {
                                         {att.stores?.name || '-'}
                                       </td>
                                       <td className="px-3 py-2 text-center">
-                                        {formatMinutesToHours(att.work_minutes || 0)}
+                                        <div>{formatMinutesToHours(att.work_minutes || 0)}</div>
+                                        {dailyPay.lateNightMinutes > 0 && (
+                                          <div className="text-[10px] text-secondary">
+                                            深夜 {formatMinutesToHours(dailyPay.lateNightMinutes)}
+                                          </div>
+                                        )}
                                       </td>
                                       <td className="px-3 py-2 text-center">
                                         {formatCurrency(dailyWage)}
