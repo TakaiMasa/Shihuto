@@ -46,6 +46,7 @@ export default function SalaryManagePage() {
   const { supabase } = useAuth()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [salaries, setSalaries] = useState<(Salary & { profiles: Profile })[]>([])
+  const [annualSalaries, setAnnualSalaries] = useState<(Salary & { profiles: Profile })[]>([])
   const [loading, setLoading] = useState(true)
   const [calculating, setCalculating] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
@@ -57,6 +58,7 @@ export default function SalaryManagePage() {
   const lastAutoCalculatedMonthRef = useRef<string | null>(null)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
+  const currentYear = format(currentMonth, 'yyyy')
 
   // 月が変わったら展開状態をリセット
   useEffect(() => {
@@ -68,15 +70,24 @@ export default function SalaryManagePage() {
 
   const fetchSalaries = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
-    const { data } = await supabase
-      .from('salaries')
-      .select('*, profiles(name)')
-      .eq('year_month', yearMonth)
-      .order('total_salary', { ascending: false })
+    const [{ data }, { data: annualData }] = await Promise.all([
+      supabase
+        .from('salaries')
+        .select('*, profiles(name)')
+        .eq('year_month', yearMonth)
+        .order('total_salary', { ascending: false }),
+      supabase
+        .from('salaries')
+        .select('*, profiles(name)')
+        .gte('year_month', `${currentYear}-01`)
+        .lte('year_month', `${currentYear}-12`)
+        .order('year_month', { ascending: true }),
+    ])
 
     setSalaries((data || []) as (Salary & { profiles: Profile })[])
+    setAnnualSalaries((annualData || []) as (Salary & { profiles: Profile })[])
     if (showLoading) setLoading(false)
-  }, [yearMonth, supabase])
+  }, [yearMonth, currentYear, supabase])
 
   const calculateAndRefresh = useCallback(async ({
     includeConfirmed = true,
@@ -247,6 +258,43 @@ export default function SalaryManagePage() {
   }
 
   const totalAmount = salaries.reduce((sum, s) => sum + s.total_salary, 0)
+  const annualTotalAmount = annualSalaries.reduce((sum, s) => sum + s.total_salary, 0)
+  const annualStaffSummaries = Array.from(
+    annualSalaries.reduce((summaryMap, salary) => {
+      const current = summaryMap.get(salary.user_id) || {
+        userId: salary.user_id,
+        name: salary.profiles?.name || '未設定',
+        totalSalary: 0,
+        baseSalary: 0,
+        transportationTotal: 0,
+        totalWorkMinutes: 0,
+        monthCount: 0,
+        confirmedCount: 0,
+      }
+
+      summaryMap.set(salary.user_id, {
+        ...current,
+        totalSalary: current.totalSalary + salary.total_salary,
+        baseSalary: current.baseSalary + salary.base_salary,
+        transportationTotal: current.transportationTotal + salary.transportation_total,
+        totalWorkMinutes: current.totalWorkMinutes + salary.total_work_minutes,
+        monthCount: current.monthCount + 1,
+        confirmedCount: current.confirmedCount + (salary.is_confirmed ? 1 : 0),
+      })
+
+      return summaryMap
+    }, new Map<string, {
+      userId: string
+      name: string
+      totalSalary: number
+      baseSalary: number
+      transportationTotal: number
+      totalWorkMinutes: number
+      monthCount: number
+      confirmedCount: number
+    }>())
+      .values()
+  ).sort((a, b) => b.totalSalary - a.totalSalary)
 
   return (
     <div>
@@ -265,6 +313,79 @@ export default function SalaryManagePage() {
           {message.text}
         </div>
       )}
+
+      <div className="bg-card rounded-xl border border-border shadow-sm mb-4 overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h2 className="font-semibold text-foreground">{currentYear}年 年間給与</h2>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+            <div>
+              <p className="text-xs text-secondary mb-1">総支給額</p>
+              <p className="text-2xl font-bold text-primary">{formatCurrency(annualTotalAmount)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary mb-1">基本給</p>
+              <p className="text-sm font-semibold text-foreground">
+                {formatCurrency(annualSalaries.reduce((sum, s) => sum + s.base_salary, 0))}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary mb-1">交通費</p>
+              <p className="text-sm font-semibold text-foreground">
+                {formatCurrency(annualSalaries.reduce((sum, s) => sum + s.transportation_total, 0))}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-secondary mb-1">給与データ</p>
+              <p className="text-sm font-semibold text-foreground">{annualSalaries.length}件</p>
+            </div>
+          </div>
+
+          {annualStaffSummaries.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-3 py-2 text-left font-medium text-secondary">スタッフ</th>
+                    <th className="px-3 py-2 text-right font-medium text-secondary">総支給額</th>
+                    <th className="px-3 py-2 text-right font-medium text-secondary">基本給</th>
+                    <th className="px-3 py-2 text-right font-medium text-secondary">交通費</th>
+                    <th className="px-3 py-2 text-center font-medium text-secondary">勤務時間</th>
+                    <th className="px-3 py-2 text-center font-medium text-secondary">月数</th>
+                    <th className="px-3 py-2 text-center font-medium text-secondary">確定</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {annualStaffSummaries.map((summary) => (
+                    <tr key={summary.userId} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2 font-medium text-foreground">{summary.name}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-primary">
+                        {formatCurrency(summary.totalSalary)}
+                      </td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(summary.baseSalary)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {formatCurrency(summary.transportationTotal)}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        {formatMinutesToHours(summary.totalWorkMinutes)}
+                      </td>
+                      <td className="px-3 py-2 text-center">{summary.monthCount}ヶ月</td>
+                      <td className="px-3 py-2 text-center">
+                        {summary.confirmedCount}/{summary.monthCount}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-secondary text-center py-4">
+              この年の給与データがありません
+            </p>
+          )}
+        </div>
+      </div>
 
       <div className="bg-card rounded-xl border border-border shadow-sm">
         {/* ヘッダー */}
