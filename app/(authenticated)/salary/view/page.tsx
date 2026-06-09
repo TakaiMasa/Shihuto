@@ -124,7 +124,7 @@ export default function SalaryViewPage() {
         <div className="bg-card rounded-xl border border-border shadow-sm p-12 text-center">
           <Wallet size={48} className="mx-auto text-secondary/30 mb-4" />
           <p className="text-secondary">この月の給与データはまだありません</p>
-          <p className="text-xs text-secondary mt-2">管理者が給与計算を行うと表示されます</p>
+          <p className="text-xs text-secondary mt-2">管理者が給与管理画面を開くと自動で計算されます</p>
         </div>
       ) : (
         <div className="max-w-lg mx-auto space-y-4">

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { format, addMonths, endOfMonth } from 'date-fns'
 import { ja } from 'date-fns/locale'
@@ -18,9 +18,9 @@ import {
 } from 'lucide-react'
 import { cn, formatCurrency, formatMinutesToHours, formatDate } from '@/lib/utils'
 import type { Salary, Profile } from '@/lib/types'
+import { calculateMonthlySalaries } from '@/lib/salary-calculation'
 import {
   calculateAttendancePay,
-  calculateBaseSalaryByStore,
   createHourlyWageMap,
   getStoreHourlyWage,
 } from '@/lib/wages'
@@ -54,6 +54,7 @@ export default function SalaryManagePage() {
   const [staffFeesByStore, setStaffFeesByStore] = useState<Record<string, Map<string, number>>>({})
   const [staffWagesByStore, setStaffWagesByStore] = useState<Record<string, Map<string, number>>>({})
   const [loadingDaily, setLoadingDaily] = useState<string | null>(null)
+  const lastAutoCalculatedMonthRef = useRef<string | null>(null)
 
   const yearMonth = format(currentMonth, 'yyyy-MM')
 
@@ -65,8 +66,8 @@ export default function SalaryManagePage() {
     setStaffWagesByStore({})
   }, [yearMonth])
 
-  const fetchSalaries = useCallback(async () => {
-    setLoading(true)
+  const fetchSalaries = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     const { data } = await supabase
       .from('salaries')
       .select('*, profiles(name)')
@@ -74,88 +75,58 @@ export default function SalaryManagePage() {
       .order('total_salary', { ascending: false })
 
     setSalaries((data || []) as (Salary & { profiles: Profile })[])
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }, [yearMonth, supabase])
 
-  useEffect(() => {
-    fetchSalaries()
-  }, [fetchSalaries])
-
-  const handleCalculate = async () => {
+  const calculateAndRefresh = useCallback(async ({
+    includeConfirmed = true,
+    showLoading = false,
+    showMessage = true,
+  }: {
+    includeConfirmed?: boolean
+    showLoading?: boolean
+    showMessage?: boolean
+  } = {}) => {
+    if (showLoading) setLoading(true)
     setCalculating(true)
-    setMessage({ type: '', text: '' })
+    if (showMessage) setMessage({ type: '', text: '' })
 
-    // アクティブなスタッフを取得
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('is_active', true)
+    try {
+      const result = await calculateMonthlySalaries(supabase, yearMonth, currentMonth, {
+        includeConfirmed,
+      })
 
-    if (!profiles) {
-      setMessage({ type: 'error', text: 'データの取得に失敗しました' })
+      if (showMessage) {
+        setMessage({
+          type: 'success',
+          text:
+            result.skippedConfirmedCount > 0
+              ? `給与を再計算しました（確定済み ${result.skippedConfirmedCount}件は自動更新対象外）`
+              : '給与を再計算しました',
+        })
+      }
+
+      setStaffAttendances({})
+      setStaffFeesByStore({})
+      setStaffWagesByStore({})
+      await fetchSalaries(false)
+    } catch (error) {
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : '給与計算に失敗しました',
+      })
+    } finally {
       setCalculating(false)
-      return
+      if (showLoading) setLoading(false)
     }
+  }, [yearMonth, currentMonth, supabase, fetchSalaries])
 
-    // 全スタッフの店舗別設定を一括取得
-    const [{ data: allStaffFees }, { data: allStaffWages }] = await Promise.all([
-      supabase
-        .from('staff_transportation_fees')
-        .select('user_id, store_id, fee'),
-      supabase
-        .from('staff_store_hourly_wages')
-        .select('user_id, store_id, hourly_wage'),
-    ])
-
-    // 各スタッフの勤怠データを取得して給与を計算
-    for (const profile of profiles) {
-      const { data: attendances } = await supabase
-        .from('attendances')
-        .select('*, stores(code)')
-        .eq('user_id', profile.id)
-        .gte('work_date', `${yearMonth}-01`)
-        .lte('work_date', format(endOfMonth(currentMonth), 'yyyy-MM-dd'))
-        .not('clock_out', 'is', null)
-
-      // このスタッフの店舗別交通費マップ
-      const profileFees = allStaffFees?.filter((f) => f.user_id === profile.id) || []
-      const feeByStore = new Map(profileFees.map((f) => [f.store_id, f.fee]))
-      const profileWages = allStaffWages?.filter((w) => w.user_id === profile.id) || []
-      const wageByStore = createHourlyWageMap(profileWages)
-
-      const attendanceRows = (attendances || []) as SalaryAttendance[]
-      const totalWorkMinutes = attendanceRows.reduce((sum, a) => sum + (a.work_minutes || 0), 0)
-      const totalBreakMinutes = attendanceRows.reduce((sum, a) => sum + (a.break_minutes || 0), 0)
-      const transportDays = attendanceRows.filter((a) => (feeByStore.get(a.store_id) || 0) > 0).length
-      const transportationTotal = attendanceRows.reduce((sum, a) => sum + (feeByStore.get(a.store_id) || 0), 0)
-      const baseSalary = calculateBaseSalaryByStore(attendanceRows, wageByStore, profile.hourly_wage)
-      const totalSalary = baseSalary + transportationTotal
-
-      // UPSERT
-      await supabase
-        .from('salaries')
-        .upsert(
-          {
-            user_id: profile.id,
-            year_month: yearMonth,
-            total_work_minutes: totalWorkMinutes,
-            total_break_minutes: totalBreakMinutes,
-            hourly_wage: profile.hourly_wage,
-            work_days_shiki: transportDays,
-            transportation_fee_per_day: 0,
-            base_salary: baseSalary,
-            transportation_total: transportationTotal,
-            total_salary: totalSalary,
-          },
-          { onConflict: 'user_id,year_month' }
-        )
-    }
-
-    setMessage({ type: 'success', text: '給与計算が完了しました' })
-    setCalculating(false)
-    setStaffAttendances({})
-    fetchSalaries()
-  }
+  // ページを開いた時・月を切り替えた時に、未確定の給与を自動で最新化する
+  useEffect(() => {
+    if (lastAutoCalculatedMonthRef.current === yearMonth) return
+    lastAutoCalculatedMonthRef.current = yearMonth
+    calculateAndRefresh({ includeConfirmed: false, showLoading: true, showMessage: false })
+  }, [calculateAndRefresh, yearMonth])
 
   const handleConfirm = async (salaryId: string) => {
     await supabase
@@ -323,7 +294,7 @@ export default function SalaryManagePage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={handleCalculate}
+              onClick={() => calculateAndRefresh({ includeConfirmed: true, showMessage: true })}
               disabled={calculating}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-hover disabled:opacity-50 transition-all"
             >
@@ -332,7 +303,7 @@ export default function SalaryManagePage() {
               ) : (
                 <Calculator size={16} />
               )}
-              {calculating ? '計算中...' : '給与計算'}
+              {calculating ? '計算中...' : '再計算'}
             </button>
             {salaries.some((s) => !s.is_confirmed) && (
               <button
@@ -356,7 +327,7 @@ export default function SalaryManagePage() {
             <div className="text-center py-20 text-secondary">
               <Calculator size={48} className="mx-auto text-secondary/30 mb-4" />
               <p>給与データがありません</p>
-              <p className="text-xs mt-2">「給与計算」ボタンで計算を実行してください</p>
+              <p className="text-xs mt-2">対象月の勤怠データが確定すると自動で計算されます</p>
             </div>
           ) : (
             <table className="w-full text-sm">
