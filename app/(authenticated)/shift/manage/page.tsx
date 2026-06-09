@@ -186,8 +186,6 @@ export default function ShiftManagePage() {
     const key = `${userId}-${dateStr}`
     const isUnavailable = unavailableDetailMap.has(key)
     if (isUnavailable) return
-    // 確定済み日はロック
-    if (confirmedDates.has(`${selectedStore}-${dateStr}`)) return
 
     setSelectedCell({ userId, dateStr })
 
@@ -509,16 +507,15 @@ export default function ShiftManagePage() {
                             ) : (
                               <button
                                 onClick={() => handleCellClick(profile.id, dateStr)}
-                                disabled={isDayConfirmed}
                                 className={cn(
                                   'w-full py-1.5 rounded-lg transition-all text-xs leading-tight',
                                   isSelected && 'ring-2 ring-primary',
                                   isDayConfirmed
                                     ? hasTime
-                                      ? 'bg-green-500 text-white font-medium cursor-default'
+                                      ? 'bg-green-500 text-white font-medium hover:bg-green-600'
                                       : isSubmitted
-                                        ? 'bg-blue-100 text-blue-500 cursor-default'
-                                        : 'bg-green-50 text-green-400 cursor-default'
+                                        ? 'bg-blue-100 text-blue-500 hover:bg-blue-200'
+                                        : 'bg-green-50 text-green-500 hover:bg-green-100'
                                     : hasTime
                                       ? 'bg-primary text-white font-medium'
                                       : isSubmitted && !pref
@@ -530,7 +527,7 @@ export default function ShiftManagePage() {
                                   <span>{formatTimeShort(shiftEntry.startTime)}-{formatTimeShort(shiftEntry.endTime)}</span>
                                 ) : (
                                   <span className="text-[10px]">
-                                    {pref && !isDayConfirmed ? (
+                                    {pref ? (
                                       <span className="text-green-600">
                                         希望{formatTimeShort(pref.start_time)}-{formatTimeShort(pref.end_time)}
                                       </span>
@@ -702,7 +699,7 @@ export default function ShiftManagePage() {
             </div>
             <div className="flex items-center gap-1.5">
               <Lock size={12} className="text-green-600" />
-              <span className="text-green-600">日確定済み（編集不可）</span>
+              <span className="text-green-600">日確定済み（編集可）</span>
             </div>
           </div>
 
