@@ -1,51 +1,100 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Shihuto
 
-## Getting Started
+飲食店向けのシフト提出・勤怠打刻・給与管理を一元化する Next.js アプリケーションです。Supabase Auth / Database をバックエンドに利用し、スタッフ向け画面と管理者向け画面を分けて運用できます。
 
-First, run the development server:
+## 主な機能
+
+- **認証**: Supabase Auth によるログイン、管理者によるスタッフ登録
+- **シフト管理**: 出勤不可日の提出、確定シフトの閲覧・管理
+- **勤怠管理**: 店舗別打刻、勤怠履歴、管理者による勤怠修正
+- **給与管理**: 店舗別時給、深夜手当、交通費を考慮した月次給与計算と PDF 出力
+- **PWA**: インストール促進、Service Worker、Web Push 通知の購読 API
+- **会計連携 API**: 別リポジトリの会計アプリ向けに人件費・勤怠・店舗・スタッフ情報を提供
+
+## 技術スタック
+
+- Next.js 16 / React 19 / TypeScript
+- Tailwind CSS
+- Supabase Auth / Database
+- `@ducanh2912/next-pwa`
+- jsPDF / jspdf-autotable
+
+## セットアップ
+
+### 1. 依存関係をインストール
+
+```bash
+npm install
+```
+
+### 2. 環境変数を作成
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local` に Supabase と連携 API 用の値を設定してください。実際の秘密情報は GitHub に公開しないでください。
+
+### 3. データベースを準備
+
+Supabase の SQL Editor などで、`supabase/migration.sql` と必要な追加マイグレーションを適用します。
+
+```text
+supabase/migration.sql
+supabase/add_shift_submissions.sql
+supabase/add_3breaks.sql
+supabase/fix_rls_policies.sql
+supabase/add_store_hourly_wages.sql
+```
+
+### 4. 開発サーバーを起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで <http://localhost:3000> を開きます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 利用可能なスクリプト
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev    # 開発サーバーを起動
+npm run build  # 本番ビルド
+npm run start  # 本番サーバーを起動
+npm run lint   # ESLint を実行
+```
 
-## Learn More
+## 会計アプリ連携 API
 
-To learn more about Next.js, take a look at the following resources:
+このアプリは、別の会計アプリに人件費データを提供できます。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
+- `GET /api/accounting/attendance-daily?date=YYYY-MM-DD`
+- `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>`
+- `GET /api/accounting/stores`
+- `GET /api/accounting/staff?includeInactive=true|false`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+認証には `Authorization: Bearer <ACCOUNTING_API_KEY>` が必要です。詳細は `docs/accounting-app-bootstrap.md` を参照してください。
 
-## Deploy on Vercel
+## 公開前の確認
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+GitHub で公開する前に、以下を必ず確認してください。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `.env.local` などの実値入り環境変数ファイルをコミットしていないこと
+- Supabase の `SUPABASE_SERVICE_ROLE_KEY`、VAPID 秘密鍵、会計連携 API キーを公開していないこと
+- 本番 DB に実在スタッフの氏名・メールアドレス・給与・勤怠などの個人情報を含めたまま公開していないこと
+- リポジトリ内の店舗名や業務フローを公開して問題ないことを関係者に確認していること
+- 公開後に運用する場合は Supabase RLS と管理者権限を再確認していること
 
-## Accounting App Integration (separate repository)
+具体的な確認コマンドと判断基準は `docs/public-release-checklist.md` を参照してください。
 
-This attendance app can expose labor-cost data for a separate accounting app.
+## ES 記載例
 
-- Endpoints:
-  - `GET /api/accounting/labor-costs?yearMonth=YYYY-MM`
-  - `GET /api/accounting/attendance-daily?date=YYYY-MM-DD` (単日)
-  - `GET /api/accounting/attendance-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&storeId=<optional>` (期間)
-  - `GET /api/accounting/stores`
-  - `GET /api/accounting/staff?includeInactive=true|false`
-- Auth: `Authorization: Bearer <ACCOUNTING_API_KEY>`
-- Required env: `ACCOUNTING_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+```text
+飲食店向けに、シフト提出・勤怠打刻・給与計算を一元管理する Web アプリを開発しました。Next.js / TypeScript / Supabase を用い、スタッフは出勤不可日の提出、確定シフトの確認、店舗別打刻、給与確認を行えます。管理者はスタッフ登録、シフト確定、勤怠修正、店舗別時給・交通費を反映した給与計算、PDF 明細出力を行えます。RLS や API キー認証を用いて権限管理にも配慮しました。
+GitHub: <リポジトリURL>
+```
 
-See `docs/accounting-app-bootstrap.md` for bootstrap steps.
+## ライセンス
+
+現時点ではライセンス未設定です。第三者による利用条件を明確にしたい場合は、公開前に `LICENSE` を追加してください。
