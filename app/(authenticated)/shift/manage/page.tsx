@@ -11,7 +11,7 @@ import {
   getDay,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote, Lock, LockOpen } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, Check, X, Clock, Trash2, Banknote, Lock, LockOpen, FileDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Profile, Store, Shift, ShiftUnavailable, ShiftPreference } from '@/lib/types'
 import { calculateShiftPay, getStoreHourlyWage } from '@/lib/wages'
@@ -360,6 +360,104 @@ export default function ShiftManagePage() {
       })()
     : 0
 
+  // 完成したシフトをPDF出力（ブラウザの印刷 → PDFに保存）
+  const handleExportPdf = () => {
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+    const monthLabel = format(currentMonth, 'yyyy年M月', { locale: ja })
+    const storeName = currentStore?.name ?? ''
+    const activeProfiles = profiles.filter((p) => p.is_active)
+
+    const headerCells = baseDays
+      .map((day) => {
+        const dow = format(day, 'E', { locale: ja })
+        return `<th class="date"><div class="d">${format(day, 'M/d')}</div><div class="dow">(${dow})</div></th>`
+      })
+      .join('')
+
+    const bodyRows = activeProfiles
+      .map((profile) => {
+        const cells = baseDays
+          .map((day) => {
+            const dateStr = format(day, 'yyyy-MM-dd')
+            const key = `${profile.id}-${dateStr}`
+            const entry = editingShifts.get(key)
+            const hasTime = entry && entry.startTime && entry.endTime
+            const isUnavailable = unavailableMap.get(profile.id)?.has(dateStr) || false
+            const isUndecided = undecidedMap.has(key)
+
+            let content = ''
+            let cls = ''
+            if (hasTime) {
+              content = `${formatTimeShort(entry!.startTime)}-${formatTimeShort(entry!.endTime)}`
+              cls = 'work'
+            } else if (isUnavailable) {
+              content = '×'
+              cls = 'off'
+            } else if (isUndecided) {
+              content = '未定'
+              cls = 'pending'
+            }
+            return `<td class="${cls}">${content}</td>`
+          })
+          .join('')
+        return `<tr><th class="name">${escapeHtml(profile.name)}</th>${cells}</tr>`
+      })
+      .join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(storeName)} ${monthLabel} シフト表</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif; color: #1f2937; margin: 0; }
+  .header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .header h1 { font-size: 18px; margin: 0; }
+  .header .store { font-size: 14px; color: #4b5563; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #d1d5db; padding: 6px 4px; text-align: center; }
+  thead th { background: #f3f4f6; font-weight: 600; }
+  th.name { background: #f9fafb; text-align: left; white-space: nowrap; font-weight: 600; width: 90px; }
+  th.date .d { font-size: 13px; }
+  th.date .dow { font-size: 10px; color: #6b7280; }
+  td.work { background: #eff6ff; font-weight: 600; color: #1d4ed8; }
+  td.off { color: #dc2626; }
+  td.pending { color: #ca8a04; font-size: 11px; }
+  .footer { margin-top: 10px; font-size: 10px; color: #9ca3af; text-align: right; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>${monthLabel} シフト表</h1>
+    <div class="store">${escapeHtml(storeName)}</div>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="name">スタッフ</th>${headerCells}</tr>
+    </thead>
+    <tbody>
+      ${bodyRows}
+    </tbody>
+  </table>
+  <div class="footer">${escapeHtml(storeName)} / ${monthLabel} / 出力: ${format(new Date(), 'yyyy-MM-dd')}</div>
+  <script>window.onload = function () { window.focus(); window.print(); };</script>
+</body>
+</html>`
+
+    const win = window.open('', '_blank')
+    if (!win) {
+      setMessage({ type: 'error', text: 'ポップアップがブロックされました。ポップアップを許可してください' })
+      return
+    }
+    win.document.write(html)
+    win.document.close()
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-foreground mb-2">シフト管理</h1>
@@ -413,6 +511,16 @@ export default function ShiftManagePage() {
                 </option>
               ))}
             </select>
+
+            <button
+              onClick={handleExportPdf}
+              disabled={loading}
+              title="この店舗・月のシフト表をPDF出力"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-foreground bg-white hover:bg-muted disabled:opacity-50 transition-colors"
+            >
+              <FileDown size={16} />
+              PDF出力
+            </button>
           </div>
         </div>
 
