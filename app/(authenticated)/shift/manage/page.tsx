@@ -360,64 +360,90 @@ export default function ShiftManagePage() {
       })()
     : 0
 
-  // 完成したシフトをPDF出力（ブラウザの印刷 → PDFに保存）
+  // 完成したシフトをPDF出力（全店舗まとめて / ブラウザの印刷 → PDFに保存）
   const handleExportPdf = () => {
     const escapeHtml = (s: string) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
     const monthLabel = format(currentMonth, 'yyyy年M月', { locale: ja })
-    const storeName = currentStore?.name ?? ''
     const activeProfiles = profiles.filter((p) => p.is_active)
 
-    const headerCells = baseDays
-      .map((day) => {
-        const dow = format(day, 'E', { locale: ja })
-        return `<th class="date"><div class="d">${format(day, 'M/d')}</div><div class="dow">(${dow})</div></th>`
-      })
-      .join('')
+    // 店舗ごとにセクションを作成（その店舗でシフトが1件もない人は除外）
+    const sections = stores
+      .map((store) => {
+        const storeBaseDay = store.base_day_of_week ?? 1
+        const storeDays = allDays.filter((d) => getDay(d) === storeBaseDay)
+        if (storeDays.length === 0) return ''
 
-    const bodyRows = activeProfiles
-      .map((profile) => {
-        const cells = baseDays
+        const rows = activeProfiles
+          .map((profile) => {
+            let hasAny = false
+            const cells = storeDays
+              .map((day) => {
+                const dateStr = format(day, 'yyyy-MM-dd')
+                const key = `${profile.id}-${dateStr}`
+                const entry = editingShifts.get(key)
+                const isThisStore = !!entry && entry.storeId === store.id
+                const hasTime = isThisStore && !!entry.startTime && !!entry.endTime
+                const isUnavailable = unavailableMap.get(profile.id)?.has(dateStr) || false
+                const isUndecided = undecidedMap.has(key)
+
+                let content = ''
+                let cls = ''
+                if (hasTime) {
+                  content = `${formatTimeShort(entry!.startTime)}-${formatTimeShort(entry!.endTime)}`
+                  cls = 'work'
+                  hasAny = true
+                } else if (isUnavailable) {
+                  content = '×'
+                  cls = 'off'
+                } else if (isUndecided) {
+                  content = '未定'
+                  cls = 'pending'
+                }
+                return `<td class="${cls}">${content}</td>`
+              })
+              .join('')
+            return { hasAny, html: `<tr><th class="name">${escapeHtml(profile.name)}</th>${cells}</tr>` }
+          })
+          .filter((r) => r.hasAny)
+
+        // その店舗で誰もシフトに入っていなければセクションごと省略
+        if (rows.length === 0) return ''
+
+        const headerCells = storeDays
           .map((day) => {
-            const dateStr = format(day, 'yyyy-MM-dd')
-            const key = `${profile.id}-${dateStr}`
-            const entry = editingShifts.get(key)
-            const hasTime = entry && entry.startTime && entry.endTime
-            const isUnavailable = unavailableMap.get(profile.id)?.has(dateStr) || false
-            const isUndecided = undecidedMap.has(key)
-
-            let content = ''
-            let cls = ''
-            if (hasTime) {
-              content = `${formatTimeShort(entry!.startTime)}-${formatTimeShort(entry!.endTime)}`
-              cls = 'work'
-            } else if (isUnavailable) {
-              content = '×'
-              cls = 'off'
-            } else if (isUndecided) {
-              content = '未定'
-              cls = 'pending'
-            }
-            return `<td class="${cls}">${content}</td>`
+            const dow = format(day, 'E', { locale: ja })
+            return `<th class="date"><div class="d">${format(day, 'M/d')}</div><div class="dow">(${dow})</div></th>`
           })
           .join('')
-        return `<tr><th class="name">${escapeHtml(profile.name)}</th>${cells}</tr>`
+
+        return `<div class="store-section">
+    <h2>${escapeHtml(store.name)}</h2>
+    <table>
+      <thead><tr><th class="name">スタッフ</th>${headerCells}</tr></thead>
+      <tbody>${rows.map((r) => r.html).join('')}</tbody>
+    </table>
+  </div>`
       })
+      .filter(Boolean)
       .join('')
+
+    const bodyContent = sections || '<p class="empty">この月に登録されたシフトはありません</p>'
 
     const html = `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(storeName)} ${monthLabel} シフト表</title>
+<title>${monthLabel} シフト表</title>
 <style>
   @page { size: A4 portrait; margin: 14mm; }
   * { box-sizing: border-box; }
   body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif; color: #1f2937; margin: 0; }
-  .header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+  .header { margin-bottom: 16px; }
   .header h1 { font-size: 18px; margin: 0; }
-  .header .store { font-size: 14px; color: #4b5563; }
+  .store-section { margin-bottom: 20px; break-inside: avoid; }
+  .store-section h2 { font-size: 14px; margin: 0 0 6px; color: #374151; border-left: 4px solid #2563eb; padding-left: 8px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { border: 1px solid #d1d5db; padding: 6px 4px; text-align: center; }
   thead th { background: #f3f4f6; font-weight: 600; }
@@ -427,35 +453,50 @@ export default function ShiftManagePage() {
   td.work { background: #eff6ff; font-weight: 600; color: #1d4ed8; }
   td.off { color: #dc2626; }
   td.pending { color: #ca8a04; font-size: 11px; }
+  .empty { color: #6b7280; }
   .footer { margin-top: 10px; font-size: 10px; color: #9ca3af; text-align: right; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head>
 <body>
   <div class="header">
-    <h1>${monthLabel} シフト表</h1>
-    <div class="store">${escapeHtml(storeName)}</div>
+    <h1>${monthLabel} シフト表（全店舗）</h1>
   </div>
-  <table>
-    <thead>
-      <tr><th class="name">スタッフ</th>${headerCells}</tr>
-    </thead>
-    <tbody>
-      ${bodyRows}
-    </tbody>
-  </table>
-  <div class="footer">${escapeHtml(storeName)} / ${monthLabel} / 出力: ${format(new Date(), 'yyyy-MM-dd')}</div>
-  <script>window.onload = function () { window.focus(); window.print(); };</script>
+  ${bodyContent}
+  <div class="footer">${monthLabel} / 出力: ${format(new Date(), 'yyyy-MM-dd')}</div>
+  <script>
+    window.onload = function () { window.focus(); window.print(); };
+  </script>
 </body>
 </html>`
 
-    const win = window.open('', '_blank')
-    if (!win) {
-      setMessage({ type: 'error', text: 'ポップアップがブロックされました。ポップアップを許可してください' })
+    // 非表示のiframeで印刷（新しいタブを開かないので元の画面から離れない）
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('aria-hidden', 'true')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
+      iframe.remove()
       return
     }
-    win.document.write(html)
-    win.document.close()
+    // コンテンツを書き込む（印刷は iframe 内の onload スクリプトが実行する）
+    doc.open()
+    doc.write(html)
+    doc.close()
+
+    // 印刷ダイアログを閉じたら iframe を片付ける（フォールバックのタイマー付き）
+    const cleanup = () => {
+      if (document.body.contains(iframe)) iframe.remove()
+    }
+    if (iframe.contentWindow) iframe.contentWindow.onafterprint = cleanup
+    setTimeout(cleanup, 60000)
   }
 
   return (
@@ -515,7 +556,7 @@ export default function ShiftManagePage() {
             <button
               onClick={handleExportPdf}
               disabled={loading}
-              title="この店舗・月のシフト表をPDF出力"
+              title="全店舗・この月のシフト表をPDF出力"
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-foreground bg-white hover:bg-muted disabled:opacity-50 transition-colors"
             >
               <FileDown size={16} />
